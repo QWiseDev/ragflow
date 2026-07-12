@@ -38,6 +38,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
 from api.db.services.tenant_llm_service import TenantLLMService
+from api.db.services.user_service import TenantService
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     check_duplicate_ids,
@@ -378,9 +379,17 @@ async def retrieval_test(tenant_id):
         embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
         rerank_mdl = None
-        if req.get("rerank_id"):
-            rerank_model_config = resolve_model_config(kb.tenant_id, LLMType.RERANK, req["rerank_id"])
+        rerank_id = req.get("rerank_id")
+        if rerank_id:
+            rerank_model_config = resolve_model_config(kb.tenant_id, LLMType.RERANK, rerank_id)
             rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+        else:
+            tenant_exists, tenant = TenantService.get_by_id(kb.tenant_id)
+            if not tenant_exists:
+                raise LookupError("Tenant not found")
+            if tenant.rerank_id:
+                rerank_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.RERANK)
+                rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
         if langs:
             question = await cross_languages(kb.tenant_id, None, question, langs)

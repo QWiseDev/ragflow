@@ -80,7 +80,14 @@ class _DummyParserType:
     NAIVE = "naive"
 
 
+class _DummyTaskStatus:
+    RUNNING = SimpleNamespace(value="1")
+
+
 class _DummyRetriever:
+    def __init__(self):
+        self.retrieval_calls = []
+
     async def search(self, query, _index_name, _kb_ids, *args, highlight=None, **kwargs):
         class _SRes:
             total = 1
@@ -102,6 +109,13 @@ class _DummyRetriever:
 
         _ = (query, highlight)
         return _SRes()
+
+    async def retrieval(self, *args, **kwargs):
+        self.retrieval_calls.append((args, kwargs))
+        return {"total": 0, "chunks": [], "doc_aggs": {}}
+
+    def retrieval_by_children(self, chunks, _tenant_ids):
+        return chunks
 
 
 class _DummyDocStore:
@@ -208,6 +222,10 @@ def _load_chunk_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.settings", settings_mod)
     common_pkg.settings = settings_mod
 
+    doc_store_base_mod = ModuleType("common.doc_store.doc_store_base")
+    doc_store_base_mod.OrderByExpr = type("OrderByExpr", (), {})
+    monkeypatch.setitem(sys.modules, "common.doc_store.doc_store_base", doc_store_base_mod)
+
     constants_mod = ModuleType("common.constants")
 
     class _DummyLLMType:
@@ -222,6 +240,7 @@ def _load_chunk_module(monkeypatch):
     constants_mod.RetCode = _DummyRetCode
     constants_mod.LLMType = _DummyLLMType
     constants_mod.ParserType = _DummyParserType
+    constants_mod.TaskStatus = _DummyTaskStatus
     constants_mod.PAGERANK_FLD = "pagerank_flt"
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
@@ -232,6 +251,8 @@ def _load_chunk_module(monkeypatch):
 
     metadata_utils_mod = ModuleType("common.metadata_utils")
     metadata_utils_mod.apply_meta_data_filter = lambda *_args, **_kwargs: {}
+    metadata_utils_mod.convert_conditions = lambda conditions: conditions
+    metadata_utils_mod.meta_filter = lambda *_args, **_kwargs: []
     monkeypatch.setitem(sys.modules, "common.metadata_utils", metadata_utils_mod)
 
     misc_utils_mod = ModuleType("common.misc_utils")
@@ -287,6 +308,7 @@ def _load_chunk_module(monkeypatch):
     api_utils_mod.get_json_result = lambda data=None, message="", code=0: {"code": code, "message": message, "data": data}
     api_utils_mod.get_data_error_result = lambda message="": {"code": _DummyRetCode.DATA_ERROR, "message": message, "data": False}
     api_utils_mod.get_result = lambda data=None, message="", code=0: {"code": code, "message": message, "data": data}
+    api_utils_mod.construct_json_result = lambda data=None, message="", code=0: {"code": code, "message": message, "data": data}
     api_utils_mod.get_error_data_result = lambda message="": {"code": _DummyRetCode.DATA_ERROR, "message": message, "data": False}
     api_utils_mod.server_error_response = lambda exc: {"code": _DummyRetCode.EXCEPTION_ERROR, "message": repr(exc), "data": False}
     api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda fn: fn
@@ -294,6 +316,19 @@ def _load_chunk_module(monkeypatch):
     api_utils_mod.check_duplicate_ids = lambda ids, _kind: (list(dict.fromkeys(ids)), [] if len(ids) == len(set(ids)) else [f"Duplicate {_kind} ids"])
     api_utils_mod.get_request_json = lambda: _AwaitableValue({})
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
+
+    pagination_utils_mod = ModuleType("api.utils.pagination_utils")
+    pagination_utils_mod.validate_rest_api_page_size = int
+    monkeypatch.setitem(sys.modules, "api.utils.pagination_utils", pagination_utils_mod)
+
+    reference_metadata_utils_mod = ModuleType("api.utils.reference_metadata_utils")
+    reference_metadata_utils_mod.enrich_chunks_with_document_metadata = lambda *_args, **_kwargs: None
+    reference_metadata_utils_mod.resolve_reference_metadata_preferences = lambda *_args: (False, None)
+    monkeypatch.setitem(sys.modules, "api.utils.reference_metadata_utils", reference_metadata_utils_mod)
+
+    tag_feature_utils_mod = ModuleType("common.tag_feature_utils")
+    tag_feature_utils_mod.validate_tag_features = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "common.tag_feature_utils", tag_feature_utils_mod)
 
     image_utils_mod = ModuleType("api.utils.image_utils")
     image_utils_mod.store_chunk_image = lambda *_args, **_kwargs: None
@@ -303,11 +338,17 @@ def _load_chunk_module(monkeypatch):
     services_pkg.__path__ = []
     monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
 
+    db_models_mod = ModuleType("api.db.db_models")
+    db_models_mod.Document = type("Document", (), {})
+    db_models_mod.Task = type("Task", (), {})
+    monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
+
     joint_services_pkg = ModuleType("api.db.joint_services")
     joint_services_pkg.__path__ = []
     monkeypatch.setitem(sys.modules, "api.db.joint_services", joint_services_pkg)
 
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
+    tenant_model_service_mod.split_model_name = lambda model_name: (model_name, "")
     tenant_model_service_mod.get_model_config_by_id = lambda *_args, **_kwargs: {"llm_name": "embed", "model_type": "embedding"}
     tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {"llm_name": "embed", "model_type": "embedding"}
     tenant_model_service_mod.resolve_model_config = lambda *_args, **_kwargs: {"llm_name": "embed", "model_type": "embedding"}
@@ -360,6 +401,18 @@ def _load_chunk_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.document_service", document_service_mod)
     services_pkg.document_service = document_service_mod
 
+    file2document_service_mod = ModuleType("api.db.services.file2document_service")
+    file2document_service_mod.File2DocumentService = type("File2DocumentService", (), {})
+    monkeypatch.setitem(sys.modules, "api.db.services.file2document_service", file2document_service_mod)
+    services_pkg.file2document_service = file2document_service_mod
+
+    task_service_mod = ModuleType("api.db.services.task_service")
+    task_service_mod.TaskService = type("TaskService", (), {})
+    task_service_mod.cancel_all_task_of = lambda *_args, **_kwargs: None
+    task_service_mod.queue_tasks = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "api.db.services.task_service", task_service_mod)
+    services_pkg.task_service = task_service_mod
+
     doc_metadata_service_mod = ModuleType("api.db.services.doc_metadata_service")
     doc_metadata_service_mod.DocMetadataService = type("DocMetadataService", (), {})
     monkeypatch.setitem(sys.modules, "api.db.services.doc_metadata_service", doc_metadata_service_mod)
@@ -378,7 +431,18 @@ def _load_chunk_module(monkeypatch):
 
         @staticmethod
         def get_by_id(_kb_id):
-            return True, SimpleNamespace(pagerank=0.6, tenant_id="tenant-1", tenant_embd_id="tm-embd-2", tenant_llm_id="tm-llm-1")
+            return True, SimpleNamespace(
+                id="kb-1",
+                embd_id="text-embedding-ada-002",
+                pagerank=0.6,
+                tenant_id="tenant-1",
+                tenant_embd_id="tm-embd-2",
+                tenant_llm_id="tm-llm-1",
+            )
+
+        @staticmethod
+        def get_by_ids(_kb_ids):
+            return [_KnowledgebaseService.get_by_id("kb-1")[1]]
 
     kb_service_mod.KnowledgebaseService = _KnowledgebaseService
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
@@ -458,6 +522,7 @@ def _load_chunk_module(monkeypatch):
                 asr_id="whisper-1",
                 img2txt_id="gpt-4-vision-preview",
                 rerank_id="bge-reranker",
+                tenant_rerank_id="tm-rerank-1",
                 tts_id="tts-1",
             )
 
@@ -474,6 +539,7 @@ def _load_chunk_module(monkeypatch):
             return [_DummyTenant("tenant-1")]
 
     user_service_mod.UserTenantService = _UserTenantService
+    user_service_mod.TenantService = _TenantService
     monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
     services_pkg.user_service = user_service_mod
 
@@ -715,3 +781,75 @@ def test_restful_add_chunk_valid_image_base64_stores_before_insert(monkeypatch):
     inserted = module.settings.docStoreConn.inserted[-1]
     assert inserted.get("img_id"), inserted
     assert inserted.get("doc_type_kwd") == "image", inserted
+
+
+@pytest.mark.p2
+def test_retrieval_uses_tenant_default_reranker_when_not_explicit(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    default_calls = []
+    default_config = {"llm_name": "default-reranker", "model_type": "rerank"}
+    monkeypatch.setattr(
+        module,
+        "get_tenant_default_model_by_type",
+        lambda tenant_id, model_type: default_calls.append((tenant_id, model_type)) or default_config,
+    )
+    _set_request_json(monkeypatch, module, {"dataset_ids": ["kb-1"], "question": "query"})
+
+    res = _run(_route_core(module.retrieval_test)("tenant-1"))
+
+    assert res["code"] == 0, res
+    assert default_calls == [("tenant-1", module.LLMType.RERANK)]
+    rerank_mdl = module.settings.retriever.retrieval_calls[-1][1]["rerank_mdl"]
+    assert isinstance(rerank_mdl, _DummyLLMBundle)
+
+
+@pytest.mark.p2
+def test_retrieval_explicit_reranker_takes_precedence(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    resolve_calls = []
+    default_calls = []
+    monkeypatch.setattr(
+        module,
+        "resolve_model_config",
+        lambda tenant_id, model_type, model_id: resolve_calls.append((tenant_id, model_type, model_id)) or {"llm_name": model_id, "model_type": model_type.value},
+    )
+    monkeypatch.setattr(
+        module,
+        "get_tenant_default_model_by_type",
+        lambda *_args: default_calls.append(_args),
+    )
+    _set_request_json(
+        monkeypatch,
+        module,
+        {"dataset_ids": ["kb-1"], "question": "query", "rerank_id": "explicit-reranker"},
+    )
+
+    res = _run(_route_core(module.retrieval_test)("tenant-1"))
+
+    assert res["code"] == 0, res
+    assert resolve_calls[-1] == ("tenant-1", module.LLMType.RERANK, "explicit-reranker")
+    assert default_calls == []
+    assert isinstance(module.settings.retriever.retrieval_calls[-1][1]["rerank_mdl"], _DummyLLMBundle)
+
+
+@pytest.mark.p2
+def test_retrieval_without_configured_default_skips_reranker(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    default_calls = []
+    monkeypatch.setattr(
+        module.TenantService,
+        "get_by_id",
+        lambda _tenant_id: (True, SimpleNamespace(rerank_id="", tenant_rerank_id=None)),
+    )
+    monkeypatch.setattr(
+        module,
+        "get_tenant_default_model_by_type",
+        lambda *_args: default_calls.append(_args),
+    )
+    _set_request_json(monkeypatch, module, {"dataset_ids": ["kb-1"], "question": "query"})
+
+    res = _run(_route_core(module.retrieval_test)("tenant-1"))
+
+    assert res["code"] == 0, res
+    assert default_calls == []
+    assert module.settings.retriever.retrieval_calls[-1][1]["rerank_mdl"] is None
