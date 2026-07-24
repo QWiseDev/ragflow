@@ -38,6 +38,7 @@ import json
 import logging
 import re
 from typing import Callable, Optional
+from urllib.parse import urlsplit
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
 from rag.prompts.generator import gen_json, message_fit_in
@@ -48,6 +49,7 @@ from ._common import (
     build_chunk_batches as _build_chunk_batches,
     bulk_dedup_items as _bulk_dedup_items,
     ensure_llm_bundle as _ensure_llm_bundle,
+    knowledge_compile_gen_conf as _knowledge_compile_gen_conf,
     run_chunked_pipeline as _run_chunked_pipeline,
     stable_row_id as _stable_row_id,
 )
@@ -838,7 +840,12 @@ async def _wiki_extract_one_batch(
     )
     try:
         res = await asyncio.wait_for(
-            gen_json(WIKI_MAP_SYSTEM, user_prompt, chat_mdl, gen_conf={"temperature": 0.1}),
+            gen_json(
+                WIKI_MAP_SYSTEM,
+                user_prompt,
+                chat_mdl,
+                gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}),
+            ),
             timeout=llm_timeout,
         )
     except asyncio.TimeoutError:
@@ -1230,6 +1237,59 @@ async def _wiki_load_all_map_extracts(tenant_id: str, kb_id: str) -> dict:
     return merged
 
 
+async def _wiki_all_map_doc_ids(tenant_id: str, kb_id: str) -> list[str]:
+    """Distinct ``doc_id`` across every ``artifact_map_extract`` row in this KB.
+
+    These are the documents that fed the current compilation. Stamped onto
+    the KB-wide aggregate rows (REDUCE / PLAN) as ``source_doc_ids`` so a
+    document delete can reference-count them — the aggregate is dropped only
+    once its last contributing document is gone.
+    """
+    from common import settings
+    from common.doc_store.doc_store_base import OrderByExpr
+    from rag.nlp import search as _rag_search
+
+    index = _rag_search.index_name(tenant_id)
+    condition = {"compile_kwd": [WIKI_MAP_COMPILE_KWD]}
+    select_fields = ["id", "doc_id"]
+
+    PAGE_SIZE = 1000
+    offset = 0
+    doc_ids: list[str] = []
+    seen: set[str] = set()
+    while True:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                select_fields,
+                [],
+                condition,
+                [],
+                OrderByExpr(),
+                offset,
+                PAGE_SIZE,
+                index,
+                [kb_id],
+            )
+            field_map = settings.docStoreConn.get_fields(res, select_fields)
+        except Exception:
+            logging.exception("wiki: failed to scan MAP doc ids for kb=%s (offset=%d)", kb_id, offset)
+            break
+        if not field_map:
+            break
+        for row in field_map.values():
+            raw = row.get("doc_id")
+            candidates = raw if isinstance(raw, list) else [raw]
+            for d in candidates:
+                if isinstance(d, str) and d and d not in seen:
+                    seen.add(d)
+                    doc_ids.append(d)
+        if len(field_map) < PAGE_SIZE:
+            break
+        offset += PAGE_SIZE
+    return doc_ids
+
+
 async def _wiki_compute_map_input_hash(tenant_id: str, kb_id: str) -> str:
     """xxh64 fingerprint of the **current** ``artifact_map_extract`` rows for
     this KB — used by REDUCE / PLAN to cache-bust when MAP changed.
@@ -1358,11 +1418,14 @@ async def _wiki_persist_reduce(
     tenant_id: str,
     kb_id: str,
     input_hash: str = "",
+    source_doc_ids: Optional[list[str]] = None,
 ) -> None:
     """Upsert the single non-searchable artifact_reduce_result row for this KB.
 
     ``input_hash`` records the MAP-state fingerprint this reduction was
     computed from; the next call compares it before re-running.
+    ``source_doc_ids`` is the set of documents that fed this reduction, used
+    for delete-time reference counting.
     """
     from common import settings
     from rag.nlp import search as _rag_search
@@ -1377,6 +1440,7 @@ async def _wiki_persist_reduce(
         "doc_id": kb_id_str,  # sentinel — KB-scoped row, not a real document
         "compile_kwd": WIKI_REDUCE_COMPILE_KWD,
         "source_id": [kb_id_str],
+        "source_doc_ids": list(source_doc_ids or []),
         "input_hash_kwd": input_hash,
         "content_with_weight": content_with_weight,
         "available_int": 0,
@@ -1459,6 +1523,7 @@ async def wiki_reduce_from_extracts(
     # correct. ``force_rerun=True`` bypasses both checks for the
     # legacy / admin "rebuild from scratch" path.
     current_input_hash = await _wiki_compute_map_input_hash(tenant_id, kb_id)
+    reduce_source_doc_ids = await _wiki_all_map_doc_ids(tenant_id, kb_id)
     if not force_rerun:
         cached_pair = await _wiki_load_reduce_resume(tenant_id, kb_id)
         if cached_pair is not None:
@@ -1494,7 +1559,7 @@ async def wiki_reduce_from_extracts(
     if not raw_entities and not raw_concepts:
         # Nothing to reduce; persist an empty result so resume can short-circuit.
         empty = _wiki_empty_extract()
-        await _wiki_persist_reduce(empty, tenant_id, kb_id, input_hash=current_input_hash)
+        await _wiki_persist_reduce(empty, tenant_id, kb_id, input_hash=current_input_hash, source_doc_ids=reduce_source_doc_ids)
         return empty
 
     if callback:
@@ -1553,7 +1618,7 @@ async def wiki_reduce_from_extracts(
             callback(0.9, "wiki REDUCE: persisting result")
         except Exception:
             pass
-    await _wiki_persist_reduce(reduced, tenant_id, kb_id, input_hash=current_input_hash)
+    await _wiki_persist_reduce(reduced, tenant_id, kb_id, input_hash=current_input_hash, source_doc_ids=reduce_source_doc_ids)
 
     logging.info(
         "wiki_reduce: kb=%s done — entities=%d concepts=%d claims=%d relations=%d topics=%d",
@@ -1929,7 +1994,12 @@ async def _wiki_resolve_maybe_items(
 
         try:
             res = await asyncio.wait_for(
-                gen_json(WIKI_PLAN_RECONCILE_SYSTEM, user_prompt, chat_mdl, gen_conf={"temperature": 0.0}),
+                gen_json(
+                    WIKI_PLAN_RECONCILE_SYSTEM,
+                    user_prompt,
+                    chat_mdl,
+                    gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0}),
+                ),
                 timeout=llm_timeout,
             )
         except asyncio.TimeoutError:
@@ -1990,9 +2060,7 @@ async def _wiki_planning_call(
 
     entities_summary = "\n".join(_wiki_format_entity_for_plan(e, reconciliation) for e in sorted_entities[:200]) or "  (none)"
     concepts_summary = "\n".join(_wiki_format_concept_for_plan(c, reconciliation) for c in sorted_concepts[:200]) or "  (none)"
-    topics_summary = "\n".join(
-        f"  - {t.strip()}" for t in raw_topics[:200] if isinstance(t, str) and t.strip()
-    ) or "  (none)"
+    topics_summary = "\n".join(f"  - {t.strip()}" for t in raw_topics[:200] if isinstance(t, str) and t.strip()) or "  (none)"
 
     kb_lines: list[str] = []
     for name, rec in reconciliation.items():
@@ -2012,7 +2080,12 @@ async def _wiki_planning_call(
 
     try:
         res = await asyncio.wait_for(
-            gen_json(WIKI_PLAN_PLANNING_SYSTEM, user_prompt, chat_mdl, gen_conf={"temperature": 0.1}),
+            gen_json(
+                WIKI_PLAN_PLANNING_SYSTEM,
+                user_prompt,
+                chat_mdl,
+                gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}),
+            ),
             timeout=llm_timeout,
         )
     except asyncio.TimeoutError:
@@ -2152,11 +2225,14 @@ async def _wiki_persist_plan(
     tenant_id: str,
     kb_id: str,
     input_hash: str = "",
+    source_doc_ids: Optional[list[str]] = None,
 ) -> None:
     """Upsert the single non-searchable artifact_compilation_plan row for this KB.
 
     ``input_hash`` records the REDUCE-state fingerprint this plan was
     derived from; the next call compares it before re-planning.
+    ``source_doc_ids`` is the set of documents that fed this plan, used for
+    delete-time reference counting.
     """
     from common import settings
     from rag.nlp import search as _rag_search
@@ -2170,6 +2246,7 @@ async def _wiki_persist_plan(
         "doc_id": kb_id_str,  # sentinel — KB-scoped row, not a real document
         "compile_kwd": WIKI_PLAN_COMPILE_KWD,
         "source_id": [kb_id_str],
+        "source_doc_ids": list(source_doc_ids or []),
         "input_hash_kwd": input_hash,
         "content_with_weight": content_with_weight,
         "available_int": 0,
@@ -2247,6 +2324,7 @@ async def wiki_plan_from_reduction(
     # plan was stamped with the same hash REDUCE is currently exposing,
     # nothing upstream has changed and the plan is still valid.
     current_reduce_hash = await _wiki_load_reduce_input_hash(tenant_id, kb_id)
+    plan_source_doc_ids = await _wiki_all_map_doc_ids(tenant_id, kb_id)
     if not force_rerun:
         cached_pair = await _wiki_load_plan_resume(tenant_id, kb_id)
         if cached_pair is not None:
@@ -2280,7 +2358,7 @@ async def wiki_plan_from_reduction(
             "_topics": [],
             "_reconciliation": {},
         }
-        await _wiki_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash)
+        await _wiki_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash, source_doc_ids=plan_source_doc_ids)
         return empty
 
     canonical_entities = reduced.get("entities") or []
@@ -2311,7 +2389,7 @@ async def wiki_plan_from_reduction(
             "_topics": raw_topics,
             "_reconciliation": {},
         }
-        await _wiki_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash)
+        await _wiki_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash, source_doc_ids=plan_source_doc_ids)
         return empty
 
     if callback:
@@ -2376,7 +2454,7 @@ async def wiki_plan_from_reduction(
             callback(0.9, "wiki PLAN: persisting plan")
         except Exception:
             pass
-    await _wiki_persist_plan(plan, tenant_id, kb_id, input_hash=current_reduce_hash)
+    await _wiki_persist_plan(plan, tenant_id, kb_id, input_hash=current_reduce_hash, source_doc_ids=plan_source_doc_ids)
 
     logging.info(
         "wiki_plan: kb=%s done — pages=%d (target=%d) updates=%d creates=%d",
@@ -2841,19 +2919,20 @@ async def _wiki_build_source_context(
 
 _WIKILINK_PIPE_RE = re.compile(r"\[\[([^\[\]\|]+?)\|([^\[\]]+?)\]\]")
 _WIKILINK_SIMPLE_RE = re.compile(r"\[\[([^\[\]\|]+?)\]\]")
+_ARTIFACT_MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
 
-def _wiki_transform_links(content_md: str, kb_id: str) -> tuple[str, list[str]]:
-    """Rewrite ``[[slug]]`` / ``[[slug|display]]`` wikilinks to standard
-    markdown links whose href encodes ``(kb_id, slug)`` so a renderer can
-    fetch the target page from ES.
+def _wiki_transform_links(content_md: str, kb_id: str, page_titles: dict[str, str] | None = None) -> tuple[str, list[str]]:
+    """Normalize wiki links and return ``(rendered_md, unique_outlinks)``.
 
-    Returns ``(rewritten_md, unique_outlinks)`` — outlinks are slug strings
-    in first-seen order. The href format is ``artifact/{kb_id}/{slug}`` which is
-    relative; clients are expected to map this to whatever route serves the
-    page (e.g. ``/api/v1/artifact/{kb_id}/{slug}``).
+    Both the canonical ``[[slug]]`` form and Markdown links emitted by an LLM
+    are accepted. Artifact links are rewritten to the relative
+    ``artifact/{kb_id}/{slug}`` form. When an artifact link uses its slug as
+    the label, prefer the planned page title; otherwise derive readable text
+    from the slug.
     """
     kb_id_str = str(kb_id)
+    page_titles = page_titles or {}
     seen: set[str] = set()
     outlinks: list[str] = []
 
@@ -2862,6 +2941,38 @@ def _wiki_transform_links(content_md: str, kb_id: str) -> tuple[str, list[str]]:
         if s and s not in seen:
             seen.add(s)
             outlinks.append(s)
+
+    def _display_text(label: str, slug: str) -> str:
+        label = label.strip()
+        if label not in {slug, slug.rsplit("/", 1)[-1]}:
+            return label
+        planned_title = page_titles.get(slug)
+        if planned_title:
+            return planned_title
+        readable = slug.rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").strip()
+        return readable.title() or label
+
+    def _artifact_slug(href: str) -> str | None:
+        parsed = urlsplit(href)
+        if parsed.scheme or parsed.netloc:
+            if parsed.netloc != "artifact":
+                return None
+            path = parsed.path
+        else:
+            path = parsed.path
+        parts = path.strip("/").split("/")
+        if parts and parts[0] == "artifact":
+            parts = parts[1:]
+        if len(parts) < 2 or parts[0] != kb_id_str:
+            return None
+        return "/".join(parts[1:])
+
+    def _markdown_artifact(m: re.Match) -> str:
+        slug = _artifact_slug(m.group(2))
+        if not slug:
+            return m.group(0)
+        _track(slug)
+        return f"[{_display_text(m.group(1), slug)}](artifact/{kb_id_str}/{slug})"
 
     def _piped(m: re.Match) -> str:
         slug = m.group(1).strip()
@@ -2872,9 +2983,10 @@ def _wiki_transform_links(content_md: str, kb_id: str) -> tuple[str, list[str]]:
     def _simple(m: re.Match) -> str:
         slug = m.group(1).strip()
         _track(slug)
-        return f"[{slug}](artifact/{kb_id_str}/{slug})"
+        return f"[{_display_text(slug, slug)}](artifact/{kb_id_str}/{slug})"
 
-    rewritten = _WIKILINK_PIPE_RE.sub(_piped, content_md or "")
+    rewritten = _ARTIFACT_MARKDOWN_LINK_RE.sub(_markdown_artifact, content_md or "")
+    rewritten = _WIKILINK_PIPE_RE.sub(_piped, rewritten)
     rewritten = _WIKILINK_SIMPLE_RE.sub(_simple, rewritten)
     return rewritten, outlinks
 
@@ -3023,7 +3135,11 @@ async def _wiki_chat_text(
         logging.exception("wiki_refine: message_fit_in failed; sending untrimmed")
     try:
         raw = await asyncio.wait_for(
-            chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": temperature}),
+            chat_mdl.async_chat(
+                msg[0]["content"],
+                msg[1:],
+                _knowledge_compile_gen_conf(chat_mdl, {"temperature": temperature}),
+            ),
             timeout=llm_timeout,
         )
     except asyncio.TimeoutError:
@@ -3174,12 +3290,14 @@ async def _wiki_persist_draft(
         return
     index = _rag_search.index_name(tenant_id)
     content_with_weight = json.dumps(page, ensure_ascii=False)
+    draft_doc_ids = [d for d in (page.get("source_doc_ids") or []) if isinstance(d, str) and d]
     row = {
         "id": _wiki_draft_row_id(kb_id, slug),
         "doc_id": str(kb_id),
         "compile_kwd": WIKI_DRAFT_COMPILE_KWD,
         "artifact_slug_kwd": slug,
         "source_id": [str(kb_id)],
+        "source_doc_ids": draft_doc_ids,
         "input_hash_kwd": plan_input_hash,
         "content_with_weight": content_with_weight,
         "available_int": 0,  # non-searchable
@@ -3362,6 +3480,7 @@ async def wiki_refine_from_plan(
     all_claims = plan.get("_claims") or []
     # ``all_plan_slugs`` is implicitly deduped now (pages_spec is unique).
     all_plan_slugs = [p["slug"] for p in pages_spec]
+    page_titles = {str(p["slug"]): str(p.get("title") or "").strip() for p in pages_spec if p.get("slug") and str(p.get("title") or "").strip()}
 
     # Build canonical entity/concept lookups for evidence fallback. When MAP
     # produced no claims (a real failure mode we've seen on Chinese / dense
@@ -3483,7 +3602,7 @@ async def wiki_refine_from_plan(
                     )
 
                 # Render artifactlinks once, here, after all LLM transforms.
-                content_md_rendered, outlinks = _wiki_transform_links(content_md_raw, kb_id)
+                content_md_rendered, outlinks = _wiki_transform_links(content_md_raw, kb_id, page_titles=page_titles)
                 source_doc_ids = await _wiki_collect_doc_ids(source_chunk_ids, tenant_id, kb_id)
                 summary = _wiki_extract_summary(content_md_rendered) or title
 
@@ -3516,8 +3635,8 @@ async def wiki_refine_from_plan(
                 return None
 
             # Searchable artifact_page persistence has moved to the task
-            # handler (TaskHandler._persist_wiki_pages_to_es) so the ES
-            # schema can be controlled in one place at the ingest layer.
+            # handler so the doc-storage schema can be controlled in one
+            # place at the ingest layer.
             # REFINE now just builds the page dict and resume cache.
             try:
                 await _wiki_persist_draft(

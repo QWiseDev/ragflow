@@ -1,11 +1,21 @@
 import { type IArtifactGraphEntity } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
-import isEmpty from 'lodash/isEmpty';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
-import { type ArtifactForceGraphProps } from './types';
+import {
+  getNodeColor as defaultGetNodeColor,
+  getNodeRadius as defaultGetNodeRadius,
+  MinNodeRadius,
+} from './node-style';
+import { type ArtifactForceGraphProps, type ArtifactGraphNode } from './types';
+import { useArtifactGraphData } from './use-artifact-graph-data';
 import { useContainerDimensions } from './use-container-dimensions';
-import { defaultMapNodeToValue, renderNodeLabel } from './utils';
+import { useGraphHighlight } from './use-graph-highlight';
+import { defaultMapNodeToValue } from './utils';
+
+const defaultGetNodeId = (node: IArtifactGraphEntity) => node.slug;
+
+const nodeCanvasObjectMode = () => 'after' as const;
 
 function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   data,
@@ -14,32 +24,52 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   mapNodeToValue = defaultMapNodeToValue as (
     node: IArtifactGraphEntity,
   ) => TNodeValue,
-  getNodeId = (node) => node.slug,
+  getNodeId = defaultGetNodeId,
+  getNodeColor = defaultGetNodeColor,
+  getNodeRadius = defaultGetNodeRadius,
+  highlightNodeId,
 }: ArtifactForceGraphProps<TNodeValue>) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const fgRef = useRef<ForceGraphMethods<IArtifactGraphEntity> | undefined>(
+  const fgRef = useRef<ForceGraphMethods<ArtifactGraphNode> | undefined>(
     undefined,
   );
   const hasFittedRef = useRef(false);
   const dimensions = useContainerDimensions(containerRef, show);
 
-  const graphData = useMemo(() => {
-    if (isEmpty(data) || !data) {
-      return { nodes: [], links: [] };
+  const graphData = useArtifactGraphData({
+    data,
+    getNodeId,
+    getNodeColor,
+    getNodeRadius,
+  });
+
+  const getBaseLinkColor = useCallback(() => {
+    if (typeof window === 'undefined' || !containerRef.current) {
+      return '#b2b5b7';
     }
+    return window
+      .getComputedStyle(containerRef.current)
+      .getPropertyValue('--text-disabled')
+      .trim();
+  }, []);
 
-    const nodes = (data.entities || []).map((entity) => ({
-      ...entity,
-      id: getNodeId(entity),
-    }));
+  // Resolve the controlled id back to a node object reference (highlighting relies on the node's __neighbors/__links)
+  const pinnedNode = useMemo(
+    () =>
+      highlightNodeId
+        ? ((graphData.nodes.find((node) => node.id === highlightNodeId) ??
+            null) as ArtifactGraphNode | null)
+        : null,
+    [graphData, highlightNodeId],
+  );
 
-    const links = (data.relations || []).map((relation) => ({
-      source: relation.from,
-      target: relation.to,
-    }));
-
-    return { nodes, links };
-  }, [data, getNodeId]);
+  const {
+    handleNodeHover,
+    getNodeColor: nodeColor,
+    getLinkColor,
+    getLinkWidth,
+    paintNode,
+  } = useGraphHighlight(getBaseLinkColor, pinnedNode);
 
   useEffect(() => {
     hasFittedRef.current = false;
@@ -59,6 +89,11 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
     [onNodeClick, mapNodeToValue],
   );
 
+  const nodeVal = useCallback(
+    (node: ArtifactGraphNode) => node.__radius ?? MinNodeRadius,
+    [],
+  );
+
   return (
     <div
       ref={containerRef}
@@ -70,13 +105,19 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
           width={dimensions.width}
           height={dimensions.height}
           graphData={graphData}
-          nodeAutoColorBy="type"
+          nodeRelSize={1}
+          nodeColor={nodeColor}
+          nodeVal={nodeVal}
           cooldownTicks={100}
           nodeLabel={''}
+          autoPauseRedraw={false}
           onEngineStop={handleEngineStop}
           onNodeClick={handleNodeClick}
-          nodeCanvasObject={renderNodeLabel}
-          nodeCanvasObjectMode={() => 'after'}
+          onNodeHover={handleNodeHover}
+          nodeCanvasObject={paintNode}
+          nodeCanvasObjectMode={nodeCanvasObjectMode}
+          linkColor={getLinkColor}
+          linkWidth={getLinkWidth}
         />
       )}
     </div>

@@ -33,6 +33,7 @@ export interface IDataset {
   nickname: string;
   pagerank: number;
   parser_config: Parserconfig;
+  parser_id?: string;
   permission: string;
   pipeline_id: string;
   raptor_task_finish_at: string;
@@ -167,6 +168,7 @@ export interface IChunk {
   doc_id: string;
   doc_name: string;
   doc_type_kwd?: ChunkDocType;
+  document_url?: string;
   image_id: string;
   important_kwd?: string[];
   question_kwd?: string[]; // keywords

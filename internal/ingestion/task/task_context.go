@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
@@ -38,7 +39,11 @@ type TaskContext struct {
 	PipelineID string
 	File       any
 
-	ProgressFunc ProgressFunc
+	// Handle is the message-queue ack handle for the task message that scheduled
+	// this context. The scheduler sets it before queueing; the worker acks on a
+	// durably-persisted terminal status and nacks otherwise (e.g. shutdown
+	// mid-task) so the message is redelivered and resumed after restart.
+	Handle common.TaskHandle
 }
 
 // NewTaskContextForScheduling creates a lightweight TaskContext for queue scheduling.
@@ -54,8 +59,11 @@ func NewTaskContextForScheduling(ctx context.Context, task *entity.IngestionTask
 // It follows the FK chain: ingestion task -> document -> knowledgebase -> tenant.
 func LoadFromIngestionTask(ingestionTask *entity.IngestionTask) (*TaskContext, error) {
 	doc, err := dao.NewDocumentDAO().GetByID(ingestionTask.DocumentID)
-	if err != nil || doc == nil {
-		return nil, fmt.Errorf("error when load document %s : %w", ingestionTask.DocumentID, err)
+	if err != nil {
+		return nil, fmt.Errorf("load document %s: %w", ingestionTask.DocumentID, err)
+	}
+	if doc == nil {
+		return nil, fmt.Errorf("document %s not found", ingestionTask.DocumentID)
 	}
 
 	kb, err := dao.NewKnowledgebaseDAO().GetByID(doc.KbID)

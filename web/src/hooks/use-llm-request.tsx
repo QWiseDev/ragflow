@@ -29,7 +29,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { parseModelValue } from '@/utils/llm-util';
+import { buildModelValue, parseModelValue } from '@/utils/llm-util';
 import { useWarnEmptyModel } from './use-warn-empty-model';
 
 export const enum LLMApiAction {
@@ -281,6 +281,19 @@ export const useAddProviderInstance = () => {
         true,
       );
       if (data.code === 0 && !params.verify) {
+        // Invalidate `addedProviders` so `has_instance` flips to `true`
+        // for providers that just gained their first instance. Without
+        // this, the parent page keeps `providerQueryName === ''` (the
+        // `has_instance` gate in index.tsx) and the `providerInstances`
+        // query stays disabled, so the newly-saved instance never
+        // appears. `exact: true` avoids cascading into every
+        // providerInstances / instanceModels query (they share the
+        // `['AddedProviders', ...]` prefix) - the dedicated invalidation
+        // below handles those.
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.addedProviders(),
+          exact: true,
+        });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.providerInstances(params.llm_factory),
         });
@@ -305,6 +318,7 @@ export const useVerifyProviderConnection = () => {
       base_url?: string;
       region?: string;
       model_info?: IModelInfo[];
+      instance_id?: string;
     }) => {
       const { data } = await llmService.verifyProviderConnection(params);
       return data;
@@ -616,7 +630,17 @@ export const useFetchDefaultModelDictionary = (showEmptyModelWarn = false) => {
     const dict: Record<string, string> = {};
     Object.entries(ModelTypeToField).forEach(([key, field]) => {
       const model = defaultModels.find((m) => m.model_type === key);
-      dict[field] = model && model.enable ? model.model_id : '';
+      if (!model || !model.enable) {
+        dict[field] = '';
+        return;
+      }
+      dict[field] =
+        model.model_id ||
+        buildModelValue({
+          model_name: model.model_name,
+          model_instance: model.model_instance,
+          model_provider: model.model_provider,
+        });
     });
     return dict;
   }, [defaultModels]);
