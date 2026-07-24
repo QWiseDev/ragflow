@@ -17,10 +17,7 @@
 package dao
 
 import (
-	"context"
 	"ragflow/internal/entity"
-
-	"gorm.io/gorm"
 )
 
 // CanvasTemplateDAO data-access object for the canvas_template table.
@@ -34,9 +31,9 @@ func NewCanvasTemplateDAO() *CanvasTemplateDAO {
 // GetAll returns every row in canvas_template ordered by create_time desc, so
 // templates appear newest first in the UI. Mirrors the Python
 // CanvasTemplateService.get_all() behaviour.
-func (dao *CanvasTemplateDAO) GetAll(ctx context.Context, db *gorm.DB) ([]*entity.CanvasTemplate, error) {
+func (dao *CanvasTemplateDAO) GetAll() ([]*entity.CanvasTemplate, error) {
 	var templates []*entity.CanvasTemplate
-	if err := db.WithContext(ctx).Order("create_time desc").Find(&templates).Error; err != nil {
+	if err := DB.Order("create_time desc").Find(&templates).Error; err != nil {
 		return nil, err
 	}
 	return templates, nil

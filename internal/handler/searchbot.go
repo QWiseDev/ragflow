@@ -131,10 +131,9 @@ func (h *SearchBotHandler) SetAskService(svc *service.AskService) { h.askSvc = s
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/related_questions [post]
 func (h *SearchBotHandler) Handle(c *gin.Context) {
-	ctx := c.Request.Context()
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -149,7 +148,7 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 		return
 	}
 
-	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
+	questions, err := service.GenerateRelatedQuestions(user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
 	if err != nil {
 		common.Warn("searchbot related questions failed", zap.String("error", err.Error()))
 		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "LLM call failed")
@@ -226,7 +225,7 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 func (h *SearchBotHandler) Ask(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -317,7 +316,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 func (h *SearchBotHandler) MindMap(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -379,11 +378,10 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 	common.SuccessWithData(c, mindMap, "success")
 }
 
-// SearchBotDetail returns the public share-page bootstrap payload for a
+// SearchbotDetail returns the public share-page bootstrap payload for a
 // search app. The route is mounted under apiNoAuth but still requires a beta
 // token, matching Python's AUTH_BETA flow.
-func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
-	ctx := c.Request.Context()
+func (h *SearchBotHandler) SearchbotDetail(c *gin.Context) {
 	searchID := strings.TrimSpace(c.Query("search_id"))
 	if searchID == "" {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "search_id is required")
@@ -391,7 +389,7 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 	}
 
 	userSvc := service.NewUserService()
-	user, code, err := userSvc.GetUserByBetaAPIToken(ctx, c.GetHeader("Authorization"))
+	user, code, err := userSvc.GetUserByBetaAPIToken(c.GetHeader("Authorization"))
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, "Authentication error: API key is invalid!")
 		return

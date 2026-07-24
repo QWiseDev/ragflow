@@ -18,66 +18,64 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	"net/url"
-	"regexp"
-	"strconv"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
-
-	"ragflow/internal/tokenizer"
 )
 
-const googleToolName = "google_search"
+const googleToolName = "google"
 
-const googleToolDescription = "Search the web via Google using SerpApi. Returns organic_results[].{title, link, snippet}."
+const googleToolDescription = "Search the web via Google Programmable Search (CSE). Returns items[].{title, link, snippet}."
 
-const googlePromptMaxTokens = 200000
-
-var googleDataImagePattern = regexp.MustCompile(`!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+\-]+\)`)
-
-var googleNewlinePattern = regexp.MustCompile(`\n+`)
-
-// googleParams is the JSON shape the model or canvas sends into InvokableRun.
+// googleParams is the JSON shape the model sends into InvokableRun. The
+// api_key (CX search-engine id) and cx are both required by the upstream
+// API; api_key is the Programmable Search API key and cx is the
+// search-engine ID.
 type googleParams struct {
-	APIKey   string `json:"api_key"`
-	Q        string `json:"q"`
-	Start    int    `json:"start"`
-	Num      int    `json:"num"`
-	Country  string `json:"country"`
-	Language string `json:"language"`
+	APIKey     string `json:"api_key"`
+	CX         string `json:"cx"`
+	Query      string `json:"query"`
+	MaxResults int    `json:"max_results"`
 }
 
-type googleResult map[string]any
+// googleResult mirrors one element of the upstream `items` array.
+type googleResult struct {
+	Title   string `json:"title"`
+	Link    string `json:"link"`
+	Snippet string `json:"snippet"`
+}
 
+// googleResponse is the upstream Programmable Search envelope. We only
+// model the fields we care about.
 type googleResponse struct {
-	OrganicResults []googleResult `json:"organic_results"`
+	Items []googleResult `json:"items"`
 }
 
+// googleEnvelope is what the model sees.
 type googleEnvelope struct {
 	Results []googleResult `json:"results"`
 	Error   string         `json:"_ERROR,omitempty"`
 }
 
+// GoogleTool is the Google
+// Programmable Search tool.
+// It performs a GET against the CSE endpoint using the shared
+// HTTPHelper.
 type GoogleTool struct {
-	helper   *HTTPHelper
-	defaults googleParams
+	helper *HTTPHelper
 }
 
-var _ ToolComponent = (*GoogleTool)(nil)
-var _ ReferenceBuilder = (*GoogleTool)(nil)
-
+// NewGoogleTool returns a GoogleTool using the default HTTPHelper.
 func NewGoogleTool() *GoogleTool {
 	return NewGoogleToolWith(NewHTTPHelper())
 }
 
+// NewGoogleToolWith returns a GoogleTool that uses the provided
+// HTTPHelper. Useful for tests.
 func NewGoogleToolWith(h *HTTPHelper) *GoogleTool {
 	if h == nil {
 		h = NewHTTPHelper()
@@ -85,121 +83,71 @@ func NewGoogleToolWith(h *HTTPHelper) *GoogleTool {
 	return &GoogleTool{helper: h}
 }
 
-func NewGoogleToolWithDefaults(h *HTTPHelper, defaults googleParams) *GoogleTool {
-	if h == nil {
-		h = NewHTTPHelper()
-	}
-	return &GoogleTool{helper: h, defaults: defaults}
-}
-
+// Info returns the tool's metadata for the chat model.
 func (g *GoogleTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: googleToolName,
 		Desc: googleToolDescription,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"q": {
+			"query": {
 				Type:     schema.String,
-				Desc:     "The search keywords to execute with Google. The keywords should be the most important words/terms(includes synonyms) from the original request.",
+				Desc:     "Search query",
 				Required: true,
 			},
-			"start": {
-				Type:     schema.Integer,
-				Desc:     "Parameter defines the result offset. It skips the given number of results. It's used for pagination. (e.g., 0 (default) is the first page of results, 10 is the 2nd page of results, 20 is the 3rd page of results, etc.). Google Local Results only accepts multiples of 20(e.g. 20 for the second page results, 40 for the third page results, etc.) as the start value.",
-				Required: false,
+			"api_key": {
+				Type:     schema.String,
+				Desc:     "Google Programmable Search API key.",
+				Required: true,
 			},
-			"num": {
+			"cx": {
+				Type:     schema.String,
+				Desc:     "Google Programmable Search engine ID (cx).",
+				Required: true,
+			},
+			"max_results": {
 				Type:     schema.Integer,
-				Desc:     "Parameter defines the maximum number of results to return. (e.g., 10 (default) returns 10 results, 40 returns 40 results, and 100 returns 100 results). The use of num may introduce latency, and/or prevent the inclusion of specialized result types. It is better to omit this parameter unless it is strictly necessary to increase the number of results per page. Results are not guaranteed to have the number of results specified in num.",
+				Desc:     "Maximum number of results to return. Defaults to 5 (max 10 per request).",
 				Required: false,
 			},
 		}),
 	}, nil
 }
 
-// InputForm returns the Google fields exposed through Agent tool aggregation.
-func (g *GoogleTool) InputForm() map[string]any {
-	return map[string]any{
-		"q": map[string]any{
-			"name": "Query",
-			"type": "line",
-		},
-		"start": map[string]any{
-			"name":  "From",
-			"type":  "integer",
-			"value": 0,
-		},
-		"num": map[string]any{
-			"name":  "Limit",
-			"type":  "integer",
-			"value": 12,
-		},
+// buildGoogleURL constructs the CSE query URL. The Programmable Search
+// API caps `num` at 10; we clamp to that range to avoid upstream errors.
+func buildGoogleURL(apiKey, cx, query string, maxResults int) string {
+	if maxResults <= 0 {
+		maxResults = 5
 	}
-}
-
-func (g *GoogleTool) ComponentSpec() ComponentSpec {
-	return ComponentSpec{
-		Inputs: map[string]string{
-			"q":        "Search query.",
-			"start":    "Result offset.",
-			"num":      "Maximum number of results.",
-			"api_key":  "SerpApi API key.",
-			"country":  "Google country code.",
-			"language": "Google language code.",
-		},
-		Outputs: map[string]string{
-			"formalized_content": "Rendered Google references for downstream prompts.",
-			"json":               "Raw Google organic result list.",
-		},
-		InputForm: g.InputForm(),
+	if maxResults > 10 {
+		maxResults = 10
 	}
-}
-
-var googleEndpoint = "https://serpapi.com/search.json"
-
-func buildGoogleURL(p googleParams) string {
-	query := strings.TrimSpace(p.Q)
-	num := p.Num
-	if num <= 0 {
-		num = 6
-	}
-	country := strings.TrimSpace(p.Country)
-	if country == "" {
-		country = "us"
-	}
-	language := strings.TrimSpace(p.Language)
-	if language == "" {
-		language = "en"
-	}
-
 	q := url.Values{}
-	q.Set("api_key", p.APIKey)
-	q.Set("engine", "google")
+	q.Set("key", apiKey)
+	q.Set("cx", cx)
 	q.Set("q", query)
-	q.Set("google_domain", "google.com")
-	q.Set("gl", country)
-	q.Set("hl", language)
-	q.Set("start", strconv.Itoa(p.Start))
-	q.Set("num", strconv.Itoa(num))
-	return googleEndpoint + "?" + q.Encode()
+	q.Set("num", fmt.Sprintf("%d", maxResults))
+	return "https://www.googleapis.com/customsearch/v1?" + q.Encode()
 }
 
+// InvokableRun performs the Google Programmable Search.
 func (g *GoogleTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
 	var p googleParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return googleErrJSON(fmt.Errorf("google: parse arguments: %w", err)),
 			fmt.Errorf("google: parse arguments: %w", err)
 	}
-	p = mergeGoogleDefaults(g.defaults, p)
-	if strings.TrimSpace(p.Q) == "" {
+	if p.Query == "" {
 		return googleErrJSON(fmt.Errorf("query is required")),
 			fmt.Errorf("google: query is required")
 	}
-	if strings.TrimSpace(p.APIKey) == "" {
-		return googleErrJSON(fmt.Errorf("google: api_key is required")),
-			fmt.Errorf("google: api_key is required")
+	if p.APIKey == "" || p.CX == "" {
+		return googleErrJSON(fmt.Errorf("google: api_key and cx are required")),
+			fmt.Errorf("google: api_key and cx are required")
 	}
 
-	resp, err := g.helper.Do(ctx, http.MethodGet, buildGoogleURL(p), "", "", nil)
+	endpoint := buildGoogleURL(p.APIKey, p.CX, p.Query, p.MaxResults)
+	resp, err := g.helper.Do(ctx, http.MethodGet, endpoint, "", "", nil)
 	if err != nil {
 		return googleErrJSON(err), err
 	}
@@ -215,149 +163,7 @@ func (g *GoogleTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 		return googleErrJSON(fmt.Errorf("google: decode response: %w", err)),
 			fmt.Errorf("google: decode response: %w", err)
 	}
-	return googleJSON(googleEnvelope{Results: raw.OrganicResults}), nil
-}
-
-func mergeGoogleDefaults(defaults, p googleParams) googleParams {
-	if p.APIKey == "" {
-		p.APIKey = defaults.APIKey
-	}
-	if p.Q == "" {
-		p.Q = defaults.Q
-	}
-	if p.Start == 0 {
-		p.Start = defaults.Start
-	}
-	if p.Num == 0 {
-		p.Num = defaults.Num
-	}
-	if p.Country == "" {
-		p.Country = defaults.Country
-	}
-	if p.Language == "" {
-		p.Language = defaults.Language
-	}
-	return p
-}
-
-func (g *GoogleTool) BuildReferences(_ context.Context, envelope map[string]any) ([]map[string]any, []map[string]any) {
-	return buildGoogleReferences(envelope)
-}
-
-func (g *GoogleTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
-	results := envelopeSlice(envelope, "results")
-	chunks, _ := buildGoogleReferences(envelope)
-	return map[string]any{
-		"formalized_content": renderGoogleReferences(chunks, googlePromptMaxTokens),
-		"json":               results,
-	}
-}
-
-func buildGoogleReferences(envelope map[string]any) ([]map[string]any, []map[string]any) {
-	results := envelopeSlice(envelope, "results")
-	chunks := make([]map[string]any, 0, len(results))
-	docAggs := make([]map[string]any, 0, len(results))
-	for _, result := range results {
-		item, ok := result.(map[string]any)
-		if !ok {
-			continue
-		}
-		content := strings.TrimSpace(googleText(item["snippet"]))
-		if content == "" {
-			content = strings.TrimSpace(googleAboutDescription(item["about_this_result"]))
-		}
-		content = googleDataImagePattern.ReplaceAllString(content, "")
-		content = truncateGoogleRunes(content, 10000)
-		if content == "" {
-			continue
-		}
-		documentID := strconv.FormatInt(googleHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(googleHashInt(documentID, 500), 10)
-		title := strings.TrimSpace(googleText(item["title"]))
-		resultURL := strings.TrimSpace(googleText(item["link"]))
-		chunks = append(chunks, map[string]any{
-			"id":            displayID,
-			"chunk_id":      documentID,
-			"content":       content,
-			"doc_id":        documentID,
-			"document_id":   documentID,
-			"docnm_kwd":     title,
-			"document_name": title,
-			"similarity":    1,
-			"score":         1,
-			"url":           resultURL,
-		})
-		docAggs = append(docAggs, map[string]any{
-			"doc_name": title,
-			"doc_id":   documentID,
-			"count":    1,
-			"url":      resultURL,
-		})
-	}
-	return chunks, docAggs
-}
-
-func renderGoogleReferences(chunks []map[string]any, maxTokens int) string {
-	usedTokens := 0
-	blocks := make([]string, 0, len(chunks))
-	for _, chunk := range chunks {
-		content := googleText(chunk["content"])
-		if content == "" {
-			continue
-		}
-		block := strings.Join([]string{
-			"\nID: " + googleText(chunk["id"]),
-			"├── Title: " + googlePromptField(chunk["document_name"]),
-			"├── URL: " + googlePromptField(chunk["url"]),
-			"└── Content:\n" + content,
-		}, "\n")
-		blockTokens := tokenizer.NumTokensFromString(block)
-		if maxTokens > 0 && float64(usedTokens+blockTokens) > float64(maxTokens)*0.97 {
-			break
-		}
-		usedTokens += blockTokens
-		blocks = append(blocks, block)
-	}
-	return strings.Join(blocks, "\n")
-}
-
-func googleAboutDescription(value any) string {
-	about, ok := value.(map[string]any)
-	if !ok {
-		return ""
-	}
-	source, ok := about["source"].(map[string]any)
-	if !ok {
-		return ""
-	}
-	return googleText(source["description"])
-}
-
-func googleText(value any) string {
-	if value == nil {
-		return ""
-	}
-	if text, ok := value.(string); ok {
-		return text
-	}
-	return fmt.Sprint(value)
-}
-
-func googlePromptField(value any) string {
-	return googleNewlinePattern.ReplaceAllString(googleText(value), " ")
-}
-
-func googleHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
-}
-
-func truncateGoogleRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
+	return googleJSON(googleEnvelope{Results: raw.Items}), nil
 }
 
 func googleJSON(env googleEnvelope) string {

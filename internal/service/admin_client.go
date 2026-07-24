@@ -51,7 +51,7 @@ func NewAdminClient(logger *zap.Logger, serverType common.ServerType, serverName
 		serverName:   serverName,
 		host:         host,
 		port:         port,
-		version:      common.GetRAGFlowVersion(),
+		version:      utility.GetRAGFlowVersion(),
 		lastSuccess:  false,
 		attemptCount: 0,
 	}

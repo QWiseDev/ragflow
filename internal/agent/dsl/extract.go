@@ -24,21 +24,23 @@ package dsl
 import "fmt"
 
 // ExtractComponentInputForm returns the input-form schema dict stored at
-// `dsl["components"][componentID]["obj"]["params"]["inputs"]`.
+// `dsl["components"][componentID]["obj"]["input_form"]`.
 //
 // This is the Go equivalent of the python
 // `Canvas.get_component_input_form(component_id)` method
-// which calls component.get_input_form(). For the Begin component,
-// that returns the live component's `_param.inputs`, initialised from
-// the raw DSL `obj.params.inputs`.
+// (api/agent/canvas.py:163) which reads the same path. The python
+// version walks the live Canvas object; we walk the raw DSL map
+// directly because the Go Canvas type does not expose an
+// introspection API (see plan §Gap C — there is no `GetComponent` on
+// the runtime Canvas type).
 //
 // Returns:
 //   - the form-schema dict if present and well-typed
 //   - ErrComponentNotFound if the componentID is missing from dsl
-//   - ErrMissingInputForm if the component exists but has no params.inputs
+//   - ErrMissingInputForm if the component exists but has no input_form
 //   - ErrMalformedDSL if the field is present but the wrong type
 //
-// Type errors (params or inputs is e.g. a list or a string) are NOT
+// Type errors (input_form is e.g. a list or a string) are NOT
 // collapsed into ErrMissingInputForm — they would mask a contract
 // violation in the DSL and let DebugComponent run against corrupt
 // data. CodeRabbit PR review #1 on PR #16403.
@@ -51,21 +53,13 @@ func ExtractComponentInputForm(dsl map[string]any, componentID string) (map[stri
 	if !ok {
 		return nil, fmt.Errorf("%w: component %q has no obj", ErrMalformedDSL, componentID)
 	}
-	rawParams, exists := obj["params"]
-	if !exists || rawParams == nil {
-		return nil, fmt.Errorf("%w: component %q has no params.inputs", ErrMissingInputForm, componentID)
-	}
-	params, ok := rawParams.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("%w: component %q params is not a dict", ErrMalformedDSL, componentID)
-	}
-	rawForm, exists := params["inputs"]
+	rawForm, exists := obj["input_form"]
 	if !exists || rawForm == nil {
-		return nil, fmt.Errorf("%w: component %q has no params.inputs", ErrMissingInputForm, componentID)
+		return nil, fmt.Errorf("%w: component %q has no input_form", ErrMissingInputForm, componentID)
 	}
 	form, ok := rawForm.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("%w: component %q params.inputs is not a dict", ErrMalformedDSL, componentID)
+		return nil, fmt.Errorf("%w: component %q input_form is not a dict", ErrMalformedDSL, componentID)
 	}
 	return form, nil
 }
@@ -171,9 +165,11 @@ func FindBeginComponentID(dsl map[string]any) (string, error) {
 	return "", fmt.Errorf("%w: Begin component", ErrComponentNotFound)
 }
 
-// ExtractPrologue mirrors python Canvas.get_prologue, which returns
-// the Begin component's `_param.prologue`. In raw DSL terms this is
-// dsl["components"][<begin_id>]["obj"]["params"]["prologue"].
+// ExtractPrologue mirrors python Canvas.get_prologue
+// (api/agent/canvas.py:190) — returns the "prologue" string stored at
+// dsl["components"][<begin_id>]["obj"]["prologue"]. Reuses the
+// shared navigateToComponent helper so the addressing rule is
+// consistent with ExtractComponentInputForm.
 func ExtractPrologue(dsl map[string]any) (string, error) {
 	id, err := FindBeginComponentID(dsl)
 	if err != nil {
@@ -184,13 +180,13 @@ func ExtractPrologue(dsl map[string]any) (string, error) {
 		return "", err
 	}
 	obj, _ := comp["obj"].(map[string]any)
-	params, _ := obj["params"].(map[string]any)
-	s, _ := params["prologue"].(string)
+	s, _ := obj["prologue"].(string)
 	return s, nil
 }
 
-// ExtractMode mirrors python Canvas.get_mode. In raw DSL terms this is
-// dsl["components"][<begin_id>]["obj"]["params"]["mode"].
+// ExtractMode mirrors python Canvas.get_mode (api/agent/canvas.py:200).
+// Returns the canvas mode (e.g. "Agent" / "DataFlow") stored at
+// dsl["components"][<begin_id>]["obj"]["mode"].
 func ExtractMode(dsl map[string]any) (string, error) {
 	id, err := FindBeginComponentID(dsl)
 	if err != nil {
@@ -201,7 +197,6 @@ func ExtractMode(dsl map[string]any) (string, error) {
 		return "", err
 	}
 	obj, _ := comp["obj"].(map[string]any)
-	params, _ := obj["params"].(map[string]any)
-	s, _ := params["mode"].(string)
+	s, _ := obj["mode"].(string)
 	return s, nil
 }

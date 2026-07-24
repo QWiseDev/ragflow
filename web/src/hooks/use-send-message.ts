@@ -1,10 +1,7 @@
 import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import { ResponseType } from '@/interfaces/database/base';
-import {
-  IDocumentDownloadInfo,
-  IReferenceObject,
-} from '@/interfaces/database/chat';
+import { IReferenceObject } from '@/interfaces/database/chat';
 import { BeginQuery } from '@/pages/agent/interface';
 import { getAuthorization } from '@/utils/authorization-util';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
@@ -62,9 +59,7 @@ export interface IMessageData {
 }
 
 export interface IMessageEndData {
-  reference?: IReferenceObject;
-  attachment?: IAttachment;
-  downloads?: IDocumentDownloadInfo[];
+  reference: IReferenceObject;
 }
 
 export interface ILogData extends INodeData {

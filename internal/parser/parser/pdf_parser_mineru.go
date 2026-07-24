@@ -1,9 +1,8 @@
 package parser
 
 import (
-	"context"
 	"fmt"
-	"ragflow/internal/common"
+	"os"
 	"strings"
 	"time"
 
@@ -13,24 +12,24 @@ import (
 const minerUPollTimeout = 30 * time.Second
 const minerUPollInterval = 200 * time.Millisecond
 
-func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
+func parsePDFWithMinerU(filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
 	apiServer := strings.TrimSpace(parser.MinerUAPIServer)
 	if apiServer == "" {
-		apiServer = strings.TrimSpace(common.GetEnv(common.EnvMineruApiServer))
+		apiServer = strings.TrimSpace(os.Getenv("MINERU_APISERVER"))
 	}
 	if apiServer == "" {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU requires mineru_apiserver or MINERU_APISERVER")}
 	}
 	apiKey := parser.MinerUAPIKey
 	if strings.TrimSpace(apiKey) == "" {
-		apiKey = strings.TrimSpace(common.GetEnv(common.EnvMineruApiKey))
+		apiKey = strings.TrimSpace(os.Getenv("MINERU_API_KEY"))
 	}
 	backend := strings.TrimSpace(parser.MinerUBackend)
 	if backend == "" {
-		backend = strings.TrimSpace(common.GetEnv(common.EnvMineruBackend))
+		backend = strings.TrimSpace(os.Getenv("MINERU_BACKEND"))
 	}
 	if backend == "" {
 		backend = "pipeline"
@@ -51,11 +50,11 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 		apiConfig.ApiKey = &apiKey
 	}
 
-	task, err := driver.ParseFile(ctx, &backend, data, nil, apiConfig, &models.ParseFileConfig{}, nil)
+	task, err := driver.ParseFile(&backend, data, nil, apiConfig, &models.ParseFileConfig{})
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU submit: %w", err)}
 	}
-	content, err := pollMinerUTask(ctx, driver, task.TaskID, apiConfig, timeout)
+	content, err := pollMinerUTask(driver, task.TaskID, apiConfig, timeout)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU result: %w", err)}
 	}
@@ -63,17 +62,17 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 	if strings.TrimSpace(content) != "" {
 		pageCount = 1
 	}
-	return parseMinerUMarkdownResult(ctx, filename, content, parser.OutputFormat, pageCount)
+	return parseMinerUMarkdownResult(filename, content, parser.OutputFormat, pageCount)
 }
 
-func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID string, apiConfig *models.APIConfig, timeout time.Duration) (string, error) {
+func pollMinerUTask(driver *models.MinerULocalModel, taskID string, apiConfig *models.APIConfig, timeout time.Duration) (string, error) {
 	if timeout <= 0 {
 		timeout = minerUPollTimeout
 	}
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for {
-		task, err := driver.ShowTask(ctx, taskID, apiConfig)
+		task, err := driver.ShowTask(taskID, apiConfig)
 		if err == nil {
 			for _, segment := range task.Segments {
 				if strings.TrimSpace(segment.Content) != "" {
@@ -94,12 +93,15 @@ func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID
 	}
 }
 
-func parseMinerUMarkdownResult(ctx context.Context, filename, markdown, outputFormat string, pageCount int) ParseResult {
+func parseMinerUMarkdownResult(filename, markdown, outputFormat string, pageCount int) ParseResult {
 	fileMeta := pdfFileMeta(filename, pageCount)
 	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
 	case "", "json":
-		mp, _ := NewMarkdownParser(GoMarkdown)
-		res := mp.ParseWithResult(ctx, filename, []byte(markdown))
+		mp, err := NewMarkdownParser(GoMarkdown)
+		if err != nil {
+			return ParseResult{Err: err}
+		}
+		res := mp.ParseWithResult(filename, []byte(markdown))
 		if res.Err != nil {
 			return res
 		}

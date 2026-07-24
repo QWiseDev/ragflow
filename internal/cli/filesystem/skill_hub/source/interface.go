@@ -19,8 +19,8 @@ package source
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
-	"ragflow/internal/common"
 	"strings"
 )
 
@@ -117,9 +117,9 @@ func (r *SourceResolver) Resolve(ref string) (SkillSource, string, error) {
 
 // getHomeDir returns the user's home directory
 func getHomeDir() (string, error) {
-	home := common.GetEnv(common.EnvHome)
+	home := os.Getenv("HOME")
 	if home == "" {
-		home = common.GetEnv(common.EnvUserProfile)
+		home = os.Getenv("USERPROFILE")
 	}
 	if home == "" {
 		return "", fmt.Errorf("cannot determine home directory")

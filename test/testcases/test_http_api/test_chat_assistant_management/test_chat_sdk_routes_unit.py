@@ -193,9 +193,9 @@ def _load_chat_module(monkeypatch):
 
     class _StubLLMType(str, Enum):
         CHAT = "chat"
-        VISION = "vision"
+        IMAGE2TEXT = "image2text"
         RERANK = "rerank"
-        ASR = "asr"
+        SPEECH2TEXT = "speech2text"
         TTS = "tts"
 
     class _StubRetCode(int, Enum):
@@ -330,7 +330,6 @@ def _load_chat_module(monkeypatch):
             return False, None
 
     kb_service_mod.KnowledgebaseService = _StubKnowledgebaseService
-    kb_service_mod.validate_dataset_embedding_models = lambda _kbs: None
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
 
     tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
@@ -368,7 +367,6 @@ def _load_chat_module(monkeypatch):
 
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
-    tenant_model_service_mod.resolve_model_config = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
@@ -513,7 +511,7 @@ def test_create_chat_blank_name_is_treated_as_missing(monkeypatch):
     res = _run(module.create.__wrapped__())
 
     assert res["code"] == 102
-    assert res["message"] == "`name` is required"
+    assert res["message"] == "`name` is required."
 
 
 @pytest.mark.p1

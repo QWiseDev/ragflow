@@ -23,9 +23,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
-
 	"ragflow/internal/common"
+	"strings"
 )
 
 // AliyunModel implements ModelDriver for Aliyun
@@ -49,10 +48,10 @@ func (a *AliyunModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (a *AliyunModel) Name() string {
-	return "Tongyi-Qianwen"
+	return "aliyun"
 }
 
-func (a *AliyunModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (a *AliyunModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -65,12 +64,47 @@ func (a *AliyunModel) ChatWithMessages(ctx context.Context, modelName string, me
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Chat)
+	baseURL := resolvedBaseURL
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Chat)
+
+	// Convert messages to the format expected by API
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
 
 	// Build request body
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	reqBody := map[string]interface{}{
+		"model":       modelName,
+		"messages":    apiMessages,
+		"stream":      false,
+		"temperature": 1,
+	}
 
 	if chatModelConfig != nil {
+		if chatModelConfig.Stream != nil {
+			reqBody["stream"] = *chatModelConfig.Stream
+		}
+
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		}
+
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
+		}
+
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
+		}
+
+		if chatModelConfig.Stop != nil {
+			reqBody["stop"] = *chatModelConfig.Stop
+		}
 
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
@@ -79,23 +113,14 @@ func (a *AliyunModel) ChatWithMessages(ctx context.Context, modelName string, me
 				reqBody["enable_thinking"] = false
 			}
 		}
-
-		if chatModelConfig.Tools != nil {
-			reqBody["tool_choice"] = aliyunToolChoice(modelName, messages, chatModelConfig.ToolChoice)
-		}
 	}
-
-	// For qwen3 models on DashScope, enable_thinking defaults to true when
-	// omitted. RAGFlow's default is to disable thinking unless explicitly
-	// enabled by the user, matching Python's chat_model.py behavior.
-	applyQwen3ThinkingDefault(modelName, reqBody)
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -142,10 +167,9 @@ func (a *AliyunModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("invalid message format")
 	}
 
-	answer, hasAnswer := messageMap["content"].(string)
-	toolCalls := extractToolCalls(messageMap)
-	if !hasAnswer && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("response contains neither content nor tool calls")
+	answer, ok := messageMap["content"].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid content format")
 	}
 
 	var reasonContent string
@@ -163,14 +187,13 @@ func (a *AliyunModel) ChatWithMessages(ctx context.Context, modelName string, me
 	chatResponse := &ChatResponse{
 		Answer:        &answer,
 		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (a *AliyunModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (a *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -183,37 +206,65 @@ func (a *AliyunModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Chat)
+	baseURL := resolvedBaseURL
 
-	// Build request body with streaming enabled
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Chat)
 
-	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
-			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
-		}
-		chatModelConfig.ToolCallsResult = nil
-
-		if chatModelConfig.Thinking != nil {
-			reqBody["enable_thinking"] = *chatModelConfig.Thinking
-		}
-
-		if chatModelConfig.Tools != nil {
-			reqBody["tool_choice"] = aliyunToolChoice(modelName, messages, chatModelConfig.ToolChoice)
+	// Convert messages to API format
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
 		}
 	}
 
-	// For qwen3 models on DashScope, enable_thinking defaults to true when
-	// omitted. RAGFlow's default is to disable thinking unless explicitly
-	// enabled by the user, matching Python's chat_model.py behavior.
-	applyQwen3ThinkingDefault(modelName, reqBody)
+	// Build request body with streaming enabled
+	reqBody := map[string]interface{}{
+		"model":       modelName,
+		"messages":    apiMessages,
+		"stream":      true,
+		"temperature": 1,
+	}
+
+	if chatModelConfig.Stream != nil {
+		reqBody["stream"] = *chatModelConfig.Stream
+	}
+
+	if chatModelConfig.MaxTokens != nil {
+		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+	}
+
+	if chatModelConfig.Temperature != nil {
+		reqBody["temperature"] = *chatModelConfig.Temperature
+	}
+
+	if chatModelConfig.DoSample != nil {
+		reqBody["do_sample"] = *chatModelConfig.DoSample
+	}
+
+	if chatModelConfig.TopP != nil {
+		reqBody["top_p"] = *chatModelConfig.TopP
+	}
+
+	if chatModelConfig.Stop != nil {
+		reqBody["stop"] = *chatModelConfig.Stop
+	}
+
+	if chatModelConfig.Thinking != nil {
+		if *chatModelConfig.Thinking {
+			reqBody["enable_thinking"] = true
+		} else {
+			reqBody["enable_thinking"] = false
+		}
+	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -235,9 +286,8 @@ func (a *AliyunModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	sawTerminal := false
-	accumulatedToolCalls := make(map[int]map[string]interface{})
-	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+	// SSE parsing: read line by line
+	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
 
 		choices, ok := event["choices"].([]interface{})
@@ -249,16 +299,9 @@ func (a *AliyunModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		if !ok {
 			return nil
 		}
-		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
-			sawTerminal = true
-		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			return nil
-		}
-
-		if accumulateToolCallDeltas(delta, accumulatedToolCalls) {
 			return nil
 		}
 
@@ -277,58 +320,13 @@ func (a *AliyunModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		}
 
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !done && !sawTerminal {
-		return fmt.Errorf("aliyun: stream ended before [DONE] or finish_reason")
-	}
-
-	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
 	return sender(&endOfStream, nil)
-}
-
-// applyQwen3ThinkingDefault ensures enable_thinking=false is sent for qwen3
-// models when it hasn't been explicitly configured. DashScope defaults
-// enable_thinking to true for qwen3 models, which produces reasoning output
-// that RAGFlow doesn't expect in most pipelines. Mirrors Python's
-// chat_model.py default of enable_thinking=False for qwen3.
-func applyQwen3ThinkingDefault(modelName string, reqBody map[string]interface{}) {
-	if !strings.Contains(strings.ToLower(modelName), "qwen3") {
-		return
-	}
-	if _, alreadySet := reqBody["enable_thinking"]; alreadySet {
-		return
-	}
-	reqBody["enable_thinking"] = false
-}
-
-// aliyunToolChoice prevents qwen-flash from repeatedly issuing another tool call
-// after a tool result has already been supplied. With "auto", qwen-flash can
-// keep emitting tool_calls even for a successful result until the ReAct graph
-// exhausts its step limit. Other models, initial calls, and explicit choices
-// retain their configured behavior.
-func aliyunToolChoice(modelName string, messages []Message, configured *string) string {
-	choice := "auto"
-	if configured != nil && strings.TrimSpace(*configured) != "" {
-		choice = *configured
-	}
-	if !strings.EqualFold(strings.TrimSpace(choice), "auto") {
-		return choice
-	}
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(modelName)), "qwen-flash") {
-		return choice
-	}
-	for _, message := range messages {
-		if strings.EqualFold(message.Role, "tool") && message.ToolCallID != "" {
-			return "none"
-		}
-	}
-	return choice
 }
 
 type aliyunEmbeddingResponse struct {
@@ -351,7 +349,7 @@ type aliyunUsage struct {
 }
 
 // Embed embeds a list of texts into embeddings
-func (a *AliyunModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (a *AliyunModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -382,7 +380,7 @@ func (a *AliyunModel) Embed(ctx context.Context, modelName *string, texts []stri
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -439,7 +437,7 @@ type aliyunRerankResponse struct {
 	} `json:"results"`
 }
 
-func (a *AliyunModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (a *AliyunModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -477,7 +475,7 @@ func (a *AliyunModel) Rerank(ctx context.Context, modelName *string, query strin
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -512,30 +510,30 @@ func (a *AliyunModel) Rerank(ctx context.Context, modelName *string, query strin
 }
 
 // TranscribeAudio transcribe audio
-func (a *AliyunModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+func (a *AliyunModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AliyunModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (a *AliyunModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", a.Name())
 }
 
 // AudioSpeech convert text to audio
-func (a *AliyunModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+func (a *AliyunModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AliyunModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (a *AliyunModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", a.Name())
 }
 
 // OCRFile OCR file
-func (a *AliyunModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (a *AliyunModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
 // ParseFile parse file
-func (a *AliyunModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (a *AliyunModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
@@ -556,7 +554,7 @@ type AliyunModelList struct {
 	Output    AliyunModelOutput `json:"output"`
 }
 
-func (a *AliyunModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (a *AliyunModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -577,7 +575,7 @@ func (a *AliyunModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
@@ -611,22 +609,22 @@ func (a *AliyunModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 	return ParseListModel(modelList), nil
 }
 
-func (a *AliyunModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
+func (a *AliyunModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AliyunModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	_, err := a.ListModels(ctx, apiConfig)
+func (a *AliyunModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := a.ListModels(apiConfig)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (a *AliyunModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (a *AliyunModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AliyunModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (a *AliyunModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }

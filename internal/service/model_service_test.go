@@ -146,7 +146,7 @@ func seedModelProviderServiceScope(t *testing.T, db *gorm.DB) {
 		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
 		&entity.TenantModelProvider{ID: "provider-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-1", ProviderID: "provider-1", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
-		&entity.TenantModel{ID: "model-1", ProviderID: "provider-1", InstanceID: "instance-1", ModelName: "gpt-test", ModelType: int(entity.ModelTypeChat), Status: "active"},
+		&entity.TenantModel{ID: "model-1", ProviderID: "provider-1", InstanceID: "instance-1", ModelName: "gpt-test", ModelType: "chat", Status: "active"},
 	}
 	for _, row := range rows {
 		if err := db.Create(row).Error; err != nil {
@@ -155,14 +155,14 @@ func seedModelProviderServiceScope(t *testing.T, db *gorm.DB) {
 	}
 }
 
-func TestModelProviderServiceAlterModelStatusByID(t *testing.T) {
+func TestModelProviderServiceUpdateModelStatusByID(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	seedModelProviderServiceScope(t, db)
 
-	code, err := NewModelProviderService().AlterModel("OpenAI", "default", "", "user-1", "model-1", map[string]interface{}{"status": "inactive"})
+	code, err := NewModelProviderService().UpdateModelStatus("OpenAI", "default", "", "user-1", "model-1", "inactive")
 	if err != nil {
-		t.Fatalf("AlterModel() error = %v", err)
+		t.Fatalf("UpdateModelStatus() error = %v", err)
 	}
 	if code != common.CodeSuccess {
 		t.Fatalf("code = %v, want %v", code, common.CodeSuccess)
@@ -177,43 +177,23 @@ func TestModelProviderServiceAlterModelStatusByID(t *testing.T) {
 	}
 }
 
-func TestModelProviderServiceGetModelConfigByID(t *testing.T) {
-	db := setupModelProviderServiceTestDB(t)
-	useModelProviderServiceTestDB(t, db)
-	seedModelProviderServiceScope(t, db)
-
-	driver, modelName, apiConfig, _, err := NewModelProviderService().GetModelConfigByID("user-1", entity.ModelTypeChat, "model-1")
-	if err != nil {
-		t.Fatalf("GetModelConfigByID() error = %v", err)
-	}
-	if driver == nil {
-		t.Fatal("GetModelConfigByID() returned nil driver")
-	}
-	if modelName != "gpt-test" {
-		t.Fatalf("modelName = %q, want %q", modelName, "gpt-test")
-	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey != "sk-test" {
-		t.Fatalf("apiConfig.ApiKey = %v, want %q", apiConfig.ApiKey, "sk-test")
-	}
-}
-
-func TestModelProviderServiceAlterModelRejectsInvalidStatus(t *testing.T) {
-	code, err := NewModelProviderService().AlterModel("OpenAI", "default", "", "user-1", "model-1", map[string]interface{}{"status": "disabled"})
+func TestModelProviderServiceUpdateModelStatusRejectsInvalidStatus(t *testing.T) {
+	code, err := NewModelProviderService().UpdateModelStatus("OpenAI", "default", "", "user-1", "model-1", "disabled")
 	if err == nil {
-		t.Fatalf("AlterModel() error = nil, want invalid status error")
+		t.Fatalf("UpdateModelStatus() error = nil, want invalid status error")
 	}
 	if code != common.CodeBadRequest {
 		t.Fatalf("code = %v, want %v", code, common.CodeBadRequest)
 	}
-	if !strings.Contains(err.Error(), "status must be") {
+	if !strings.Contains(err.Error(), "status must be active or inactive") {
 		t.Fatalf("error = %v, want status validation message", err)
 	}
 }
 
-func TestModelProviderServiceAlterModelRejectsMissingModelSelector(t *testing.T) {
-	code, err := NewModelProviderService().AlterModel("OpenAI", "default", "", "user-1", "", map[string]interface{}{"status": "active"})
+func TestModelProviderServiceUpdateModelStatusRejectsMissingModelSelector(t *testing.T) {
+	code, err := NewModelProviderService().UpdateModelStatus("OpenAI", "default", "", "user-1", "", "active")
 	if err == nil {
-		t.Fatalf("AlterModel() error = nil, want missing model selector error")
+		t.Fatalf("UpdateModelStatus() error = nil, want missing model selector error")
 	}
 	if code != common.CodeBadRequest {
 		t.Fatalf("code = %v, want %v", code, common.CodeBadRequest)
@@ -223,7 +203,7 @@ func TestModelProviderServiceAlterModelRejectsMissingModelSelector(t *testing.T)
 	}
 }
 
-func TestModelProviderServiceAlterModelRejectsWrongScopedModelID(t *testing.T) {
+func TestModelProviderServiceUpdateModelStatusRejectsWrongScopedModelID(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	seedModelProviderServiceScope(t, db)
@@ -231,9 +211,9 @@ func TestModelProviderServiceAlterModelRejectsWrongScopedModelID(t *testing.T) {
 		t.Fatalf("failed to seed second instance: %v", err)
 	}
 
-	code, err := NewModelProviderService().AlterModel("OpenAI", "other", "", "user-1", "model-1", map[string]interface{}{"status": "inactive"})
+	code, err := NewModelProviderService().UpdateModelStatus("OpenAI", "other", "", "user-1", "model-1", "inactive")
 	if err == nil {
-		t.Fatalf("AlterModel() error = nil, want not found error")
+		t.Fatalf("UpdateModelStatus() error = nil, want not found error")
 	}
 	if code != common.CodeNotFound {
 		t.Fatalf("code = %v, want %v", code, common.CodeNotFound)

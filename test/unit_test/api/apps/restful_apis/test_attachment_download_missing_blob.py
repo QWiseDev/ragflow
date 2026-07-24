@@ -71,11 +71,8 @@ def _load_agent_api(monkeypatch, *, storage_get):
     _stub(
         monkeypatch,
         "api.apps",
-        AUTH_JWT="jwt",
-        AUTH_API="api",
-        AUTH_BETA="beta",
         current_user=SimpleNamespace(id="tenant-1"),
-        login_required=lambda func=None, **_kwargs: (lambda f: f) if func is None else func,
+        login_required=lambda func: func,
     )
     _stub(monkeypatch, "api.apps.services.canvas_replica_service", CanvasReplicaService=SimpleNamespace())
     _stub(monkeypatch, "api.db", CanvasCategory=SimpleNamespace())

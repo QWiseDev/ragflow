@@ -10,7 +10,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"ragflow/internal/common"
 	"regexp"
 	"sort"
 	"strconv"
@@ -45,14 +44,14 @@ func TestBatchResults(t *testing.T) {
 	pdfDir := filepath.Join("testdata", "real_pdfs")
 	all := listRealPDFs(t, pdfDir)
 
-	count := countFromEnv(common.EnvBatchCount, len(all))
-	if single := common.GetEnv(common.EnvBatchSingle); single != "" {
+	count := countFromEnv("BATCH_COUNT", len(all))
+	if single := os.Getenv("BATCH_SINGLE"); single != "" {
 		all = filterSingle(all, single, t)
 		count = 1
 	}
 	pdfs := all[:min(count, len(all))]
 
-	ddClient, err := inf.NewClient(common.GetEnv(common.EnvDeepDocURL))
+	ddClient, err := inf.NewClient(os.Getenv("DEEPDOC_URL"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +73,7 @@ func TestBatchResults(t *testing.T) {
 
 func setupLogger() {
 	level := slog.LevelInfo
-	switch common.GetEnv(common.EnvBatchLogLevel) {
+	switch os.Getenv("BATCH_LOG_LEVEL") {
 	case "debug":
 		level = slog.LevelDebug
 	case "warn":
@@ -84,14 +83,14 @@ func setupLogger() {
 }
 
 func variantFromEnv() string {
-	if common.GetEnv(common.EnvBatchSkipOCR) == "1" {
+	if os.Getenv("BATCH_SKIP_OCR") == "1" {
 		return "noocr"
 	}
 	return "ocr"
 }
 
 type outputDirs struct {
-	text, tables, dla string
+	text, tables, dla, tsrRaw string
 }
 
 func mkOutputDirs(variant string) outputDirs {
@@ -99,15 +98,17 @@ func mkOutputDirs(variant string) outputDirs {
 		text:   filepath.Join("testdata", "output", "go", variant, "text"),
 		tables: filepath.Join("testdata", "output", "go", variant, "tables"),
 		dla:    filepath.Join("testdata", "output", "go", variant, "dla"),
+		tsrRaw: filepath.Join("testdata", "output", "go", variant, "tsr_raw"),
 	}
 	os.MkdirAll(d.text, 0755)
 	os.MkdirAll(d.tables, 0755)
 	os.MkdirAll(d.dla, 0755)
+	os.MkdirAll(d.tsrRaw, 0755)
 	return d
 }
 
 func countFromEnv(key string, ceiling int) int {
-	if s := common.GetEnv(key); s != "" {
+	if s := os.Getenv(key); s != "" {
 		n, err := strconv.Atoi(s)
 		if err == nil && n > 0 && n < ceiling {
 			return n
@@ -179,7 +180,7 @@ func processPDFs(t *testing.T, pdfDir string, pdfs []string, deepDoc pdf.DocAnal
 	t.Helper()
 	var results []tool.BatchResult
 	totalChars := 0
-	skipOCR := common.GetEnv(common.EnvBatchSkipOCR) == "1"
+	skipOCR := os.Getenv("BATCH_SKIP_OCR") == "1"
 
 	for i, name := range pdfs {
 		label := fmt.Sprintf("[%d/%d] %s", i+1, len(pdfs), name)
@@ -343,10 +344,15 @@ func writeOutputs(dirs outputDirs, name string, parsed *pdf.ParseResult, res *pa
 		os.WriteFile(filepath.Join(dirs.tables, name+".json"), b, 0644)
 	}
 
-	// ── DLA layout intermediates ──
-	if parsed.DLARegions != nil {
-		if b, _ := json.MarshalIndent(parsed.DLARegions, "", "  "); b != nil {
+	// ── DLA + TSR debug intermediates ──
+	if parsed.DLADebug != nil {
+		if b, _ := json.MarshalIndent(parsed.DLADebug, "", "  "); b != nil {
 			os.WriteFile(filepath.Join(dirs.dla, name+".json"), b, 0644)
+		}
+	}
+	if parsed.TSRDebug != nil {
+		if b, _ := json.MarshalIndent(parsed.TSRDebug, "", "  "); b != nil {
+			os.WriteFile(filepath.Join(dirs.tsrRaw, name+".json"), b, 0644)
 		}
 	}
 }

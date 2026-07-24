@@ -444,7 +444,10 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                   // rules={{ required: 'Model is required' }}
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
-                      <FormLabel required>{t('chat.model')}</FormLabel>
+                      <FormLabel>
+                        <span className="text-destructive mr-1"> *</span>
+                        {t('chat.model')}
+                      </FormLabel>
                       <FormControl>
                         <ModelTreeSelect
                           modelTypes={['rerank']}

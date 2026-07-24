@@ -17,7 +17,6 @@
 package admin
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
@@ -25,16 +24,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
-	"ragflow/internal/engine/clickhouse"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/server"
-	servicepkg "ragflow/internal/service"
 	"ragflow/internal/utility"
 	"regexp"
 	"strconv"
@@ -64,7 +62,6 @@ type Service struct {
 	llmDAO              *dao.LLMDAO
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDao *dao.IngestionTaskLogDAO
-	ingestionTaskSvc    *servicepkg.IngestionTaskService
 }
 
 // NewService create admin service
@@ -89,7 +86,6 @@ func NewService() *Service {
 		llmDAO:              dao.NewLLMDAO(),
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDao: dao.NewIngestionTaskLogDAO(),
-		ingestionTaskSvc:    servicepkg.NewIngestionTaskService(),
 	}
 }
 
@@ -103,17 +99,94 @@ func (s *Service) Logout(user interface{}) error {
 	return nil
 }
 
-// ListIngestionTasks list all ingestion tasks for admin user
+// ListTasks
 func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
-	return s.ingestionTaskSvc.ListAllForAdmin()
+
+	ingestionTasks, err := s.ingestionTaskDAO.GetAllTasks(0, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	showTasks := []map[string]interface{}{}
+	for _, task := range ingestionTasks {
+		var user *entity.User
+		user, err = s.userDAO.GetByTenantID(task.UserID)
+		if err != nil {
+			return nil, err
+		}
+		//var document *entity.Document
+		//document, err = s.documentDAO.GetByID(task.DocumentID)
+		//if err != nil {
+		//	return nil, err
+		//}
+
+		var showTask map[string]interface{}
+		var latestLog *entity.IngestionTaskLog
+		latestLog, err = s.ingestionTaskLogDao.LatestLogByTaskID(task.ID)
+		showTask = map[string]interface{}{
+			"id":          task.ID,
+			"user_id":     task.UserID,
+			"user":        user.Email,
+			"document_id": task.DocumentID,
+			"status":      task.Status,
+		}
+		if err == nil && latestLog != nil && latestLog.Checkpoint != nil {
+			step, ok := latestLog.Checkpoint["current_step"].(float64)
+			if !ok {
+				showTasks = append(showTasks, showTask)
+				continue
+			}
+			showTask = map[string]interface{}{
+				"id":          task.ID,
+				"user_id":     task.UserID,
+				"user":        user.Email,
+				"document_id": task.DocumentID,
+				"status":      task.Status,
+				"step":        int(step),
+			}
+		}
+
+		showTasks = append(showTasks, showTask)
+	}
+	return showTasks, nil
 }
 
 func (s *Service) RemoveIngestionTasks(tasks []string) ([]map[string]string, error) {
-	return s.ingestionTaskSvc.RemoveMany(tasks, nil)
+	var deletedTasks []map[string]string
+	for _, taskID := range tasks {
+		taskRecord := map[string]string{
+			"task_id": taskID,
+		}
+		_, err := s.ingestionTaskDAO.RemoveByAPIServerOrAdminServer(taskID, nil)
+		if err != nil {
+			taskRecord["remove"] = fmt.Sprintf("fail: %s", err.Error())
+		} else {
+			taskRecord["remove"] = "success"
+		}
+		deletedTasks = append(deletedTasks, taskRecord)
+	}
+	return deletedTasks, nil
 }
 
 func (s *Service) StopIngestionTasks(tasks []string) ([]*entity.IngestionTask, error) {
-	return s.ingestionTaskSvc.RequestStopMany(tasks, nil)
+	var taskResponses []*entity.IngestionTask
+	for _, taskID := range tasks {
+		task, err := s.ingestionTaskDAO.SetStoppingByAPIServer(taskID)
+		if err != nil {
+			return nil, err
+		}
+
+		if task.Status == common.STOPPING {
+			msgQueueEngine := engine.GetMessageQueueEngine()
+			err = msgQueueEngine.PublishTask("tasks.RAGFLOW", []byte(task.ID))
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		taskResponses = append(taskResponses, task)
+	}
+	return taskResponses, nil
 }
 
 // GetUserByToken get user by access token
@@ -142,8 +215,8 @@ func generateRandomHex(n int) string {
 }
 
 // ListUsers list all users
-func (s *Service) ListUsers(pageIndex, pageSize int, name, status, sort, orderBy string) ([]map[string]interface{}, error) {
-	users, _, err := s.userDAO.List(pageIndex*pageSize, pageSize, name, status, sort, orderBy)
+func (s *Service) ListUsers(page, pageSize int) ([]map[string]interface{}, error) {
+	users, _, err := s.userDAO.List(page*pageSize, pageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -173,12 +246,12 @@ func (s *Service) ListUsers(pageIndex, pageSize int, name, status, sort, orderBy
 func (s *Service) CreateUser(username, password, role string) (map[string]interface{}, error) {
 	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
 	if !emailRegex.MatchString(username) {
-		return nil, fmt.Errorf("invalid email address: %s", username)
+		return nil, fmt.Errorf("Invalid email address: %s!", username)
 	}
 
 	existUser, _ := s.userDAO.GetByEmail(username)
 	if existUser != nil {
-		return nil, fmt.Errorf("user '%s' already exists", username)
+		return nil, fmt.Errorf("User '%s' already exists", username)
 	}
 
 	decryptedPassword, err := common.DecryptPassword(password)
@@ -236,35 +309,35 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 
 	// Get default model IDs from config
 	cfg := server.GetConfig()
-	chatModel := ""
-	embeddingModel := ""
-	asrModel := ""
-	vlmModel := ""
-	rerankModel := ""
-	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email"
+	chatMdl := ""
+	embdMdl := ""
+	asrMdl := ""
+	img2txtMdl := ""
+	rerankMdl := ""
+	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag"
 
 	if cfg != nil {
-		chatModel = cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
-		embeddingModel = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name
-		asrModel = cfg.UserDefaultLLM.DefaultModels.ASRModel.Name
-		vlmModel = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name
-		rerankModel = cfg.UserDefaultLLM.DefaultModels.RerankModel.Name
+		chatMdl = cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
+		embdMdl = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name
+		asrMdl = cfg.UserDefaultLLM.DefaultModels.ASRModel.Name
+		img2txtMdl = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name
+		rerankMdl = cfg.UserDefaultLLM.DefaultModels.RerankModel.Name
 	}
 
 	tenantStatus := "1"
 	tenant := &entity.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
-		LLMID:     chatModel,
-		EmbdID:    embeddingModel,
-		ASRID:     asrModel,
-		Img2TxtID: vlmModel,
-		RerankID:  rerankModel,
+		LLMID:     chatMdl,
+		EmbdID:    embdMdl,
+		ASRID:     asrMdl,
+		Img2TxtID: img2txtMdl,
+		RerankID:  rerankMdl,
 		ParserIDs: parserIDs,
 		Credit:    512,
 		Status:    &tenantStatus,
 	}
-	if err = tx.Create(tenant).Error; err != nil {
+	if err := tx.Create(tenant).Error; err != nil {
 		rollbackTx()
 		return nil, fmt.Errorf("failed to create tenant: %w", err)
 	}
@@ -366,20 +439,20 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 
 	// Get LLMs for each unique factory
 	for _, factoryConfig := range uniqueFactories {
-		models, err := s.llmDAO.GetByFactory(factoryConfig.Factory)
+		llms, err := s.llmDAO.GetByFactory(factoryConfig.Factory)
 		if err != nil {
 			common.Warn("failed to get LLMs for factory", zap.String("factory", factoryConfig.Factory), zap.Error(err))
 			continue
 		}
 
-		for _, model := range models {
+		for _, llm := range llms {
 			// Determine API key and base URL based on model type
 			var apiKey, apiBase string
-			switch model.ModelType {
-			case entity.ModelTypeChat.String():
+			switch llm.ModelType {
+			case string(entity.ModelTypeChat):
 				apiKey = factoryConfig.APIKey
 				apiBase = factoryConfig.BaseURL
-			case entity.ModelTypeEmbedding.String():
+			case string(entity.ModelTypeEmbedding):
 				apiKey = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.BaseURL
 				if apiKey == "" {
@@ -388,7 +461,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 				if apiBase == "" {
 					apiBase = factoryConfig.BaseURL
 				}
-			case entity.ModelTypeRerank.String():
+			case string(entity.ModelTypeRerank):
 				apiKey = cfg.UserDefaultLLM.DefaultModels.RerankModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.RerankModel.BaseURL
 				if apiKey == "" {
@@ -397,7 +470,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 				if apiBase == "" {
 					apiBase = factoryConfig.BaseURL
 				}
-			case entity.ModelTypeSpeech2Text.String():
+			case string(entity.ModelTypeSpeech2Text):
 				apiKey = cfg.UserDefaultLLM.DefaultModels.ASRModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.ASRModel.BaseURL
 				if apiKey == "" {
@@ -406,7 +479,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 				if apiBase == "" {
 					apiBase = factoryConfig.BaseURL
 				}
-			case entity.ModelTypeImage2Text.String():
+			case string(entity.ModelTypeImage2Text):
 				apiKey = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.BaseURL
 				if apiKey == "" {
@@ -421,12 +494,12 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 			}
 
 			maxTokens := int64(8192)
-			if model.MaxTokens > 0 {
-				maxTokens = model.MaxTokens
+			if llm.MaxTokens > 0 {
+				maxTokens = llm.MaxTokens
 			}
 
-			llmName := model.LLMName
-			modelType := model.ModelType
+			llmName := llm.LLMName
+			modelType := llm.ModelType
 			tenantLLM := &entity.TenantLLM{
 				TenantID:   userID,
 				LLMFactory: factoryConfig.Factory,
@@ -475,7 +548,7 @@ func (s *Service) GetUserDetails(username string) (map[string]interface{}, error
 	}, nil
 }
 
-// DeleteUserResult result of delete user operation
+// DeleteUserResult
 type DeleteUserResult struct {
 	Username        string   `json:"username"`
 	TenantLLMCount  int      `json:"tenant_llm_count"`
@@ -501,23 +574,23 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 	}
 	userList, err := s.userDAO.ListByEmail(username)
 	if err != nil || len(userList) == 0 {
-		return nil, fmt.Errorf("user '%s' not found", username)
+		return nil, fmt.Errorf("User '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return nil, fmt.Errorf("exist more than 1 user: %s", username)
+		return nil, fmt.Errorf("Exist more than 1 user: %s!", username)
 	}
 
 	user := userList[0]
 
 	// Check if user is active - cannot delete active users
 	if user.IsActive == "1" {
-		return nil, fmt.Errorf("user '%s' is active and can't be deleted. Please deactivate the user first", username)
+		return nil, fmt.Errorf("User '%s' is active and can't be deleted. Please deactivate the user first", username)
 	}
 
 	// Check if user is superuser - cannot delete admin accounts
 	if user.IsSuperuser != nil && *user.IsSuperuser {
-		return nil, fmt.Errorf("user '%s' is admin account and cannot be deleted", username)
+		return nil, fmt.Errorf("Cannot delete admin account")
 	}
 
 	// Get user-tenant relations
@@ -693,11 +766,11 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 func (s *Service) ChangePassword(username, newPassword string) error {
 	userList, err := s.userDAO.ListByEmail(username)
 	if err != nil || len(userList) == 0 {
-		return fmt.Errorf("user '%s' not found", username)
+		return fmt.Errorf("User '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return fmt.Errorf("exist more than 1 user: %s", username)
+		return fmt.Errorf("Exist more than 1 user: %s!", username)
 	}
 
 	user := userList[0]
@@ -735,11 +808,11 @@ func (s *Service) ChangePassword(username, newPassword string) error {
 func (s *Service) UpdateUserActivateStatus(username string, isActive bool) error {
 	userList, err := s.userDAO.ListByEmail(username)
 	if err != nil || len(userList) == 0 {
-		return fmt.Errorf("user '%s' not found", username)
+		return fmt.Errorf("User '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return fmt.Errorf("exist more than 1 user: %s", username)
+		return fmt.Errorf("Exist more than 1 user: %s!", username)
 	}
 
 	user := userList[0]
@@ -771,11 +844,11 @@ func (s *Service) UpdateUserActivateStatus(username string, isActive bool) error
 func (s *Service) GrantAdmin(username string) error {
 	userList, err := s.userDAO.ListByEmail(username)
 	if err != nil || len(userList) == 0 {
-		return fmt.Errorf("user '%s' not found", username)
+		return fmt.Errorf("User '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return fmt.Errorf("exist more than 1 user: %s", username)
+		return fmt.Errorf("Exist more than 1 user: %s!", username)
 	}
 
 	user := userList[0]
@@ -803,11 +876,11 @@ func (s *Service) GrantAdmin(username string) error {
 func (s *Service) RevokeAdmin(username string) error {
 	userList, err := s.userDAO.ListByEmail(username)
 	if err != nil || len(userList) == 0 {
-		return fmt.Errorf("user '%s' not found", username)
+		return fmt.Errorf("User '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return fmt.Errorf("exist more than 1 user: %s", username)
+		return fmt.Errorf("Exist more than 1 user: %s!", username)
 	}
 
 	user := userList[0]
@@ -819,7 +892,7 @@ func (s *Service) RevokeAdmin(username string) error {
 	isSuperuser := false
 	user.IsSuperuser = &isSuperuser
 
-	if err = s.userDAO.Update(user); err != nil {
+	if err := s.userDAO.Update(user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 
@@ -841,7 +914,7 @@ func (s *Service) GetUserAgents(username string) ([]map[string]interface{}, erro
 // API Key methods
 
 // ListUserAPITokens get user API keys
-func (s *Service) ListUserAPITokens(ctx context.Context, username string) ([]map[string]interface{}, error) {
+func (s *Service) ListUserAPITokens(username string) ([]map[string]interface{}, error) {
 	// 1. Get user details
 	user, err := s.userDAO.GetByEmail(username)
 	if err != nil {
@@ -857,7 +930,7 @@ func (s *Service) ListUserAPITokens(ctx context.Context, username string) ([]map
 	tenantID := userTenants[0].TenantID
 
 	// 3. Get API tokens by tenant ID
-	tokens, err := s.apiTokenDAO.GetByTenantID(ctx, dao.DB, tenantID)
+	tokens, err := s.apiTokenDAO.GetByTenantID(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get API tokens: %w", err)
 	}
@@ -882,7 +955,7 @@ func (s *Service) ListUserAPITokens(ctx context.Context, username string) ([]map
 }
 
 // GenerateUserAPIToken generate API key for user
-func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (map[string]interface{}, error) {
+func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{}, error) {
 	// 1. Get user details
 	user, err := s.userDAO.GetByEmail(username)
 	if err != nil {
@@ -908,7 +981,7 @@ func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (ma
 	}
 
 	// 4. Save API token
-	if err = s.apiTokenDAO.Create(ctx, dao.DB, apiToken); err != nil {
+	if err = s.apiTokenDAO.Create(apiToken); err != nil {
 		return nil, fmt.Errorf("failed to generate API key: %w", err)
 	}
 
@@ -924,7 +997,7 @@ func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (ma
 }
 
 // DeleteUserAPIToken delete user API key
-func (s *Service) DeleteUserAPIToken(ctx context.Context, username, key string) error {
+func (s *Service) DeleteUserAPIToken(username, key string) error {
 	// 1. Get user details
 	user, err := s.userDAO.GetByEmail(username)
 	if err != nil {
@@ -940,7 +1013,7 @@ func (s *Service) DeleteUserAPIToken(ctx context.Context, username, key string) 
 	tenantID := userTenants[0].TenantID
 
 	// 3. Delete API token
-	rowsAffected, err := s.apiTokenDAO.DeleteByTenantIDAndToken(ctx, dao.DB, tenantID, key)
+	rowsAffected, err := s.apiTokenDAO.DeleteByTenantIDAndToken(tenantID, key)
 	if err != nil {
 		return fmt.Errorf("failed to delete API key: %w", err)
 	}
@@ -972,14 +1045,6 @@ func (s *Service) ListServices() ([]map[string]interface{}, error) {
 				configDict["status"] = "timeout"
 			}
 			if serviceDetail != nil {
-				// delete element of configDict
-				delete(configDict, "extra")
-				delete(configDict, "database")
-				delete(configDict, "password")
-				delete(configDict, "sample_ratio")
-				delete(configDict, "secure")
-				delete(configDict, "stdout")
-				delete(configDict, "user")
 				results = append(results, configDict)
 			}
 		}
@@ -1023,12 +1088,21 @@ func (s *Service) GetServiceDetails(configDict map[string]interface{}) (map[stri
 	switch serviceType {
 	case "meta_data":
 		return s.getMySQLStatus(name)
-	case "cache":
-		return s.getRedisInfo(name)
 	case "message_queue":
-		host := configDict["host"].(string)
-		port := configDict["port"].(int)
-		return s.checkNatsAlive(name, host, port)
+		switch name {
+		case "redis":
+			return s.getRedisInfo(name)
+		case "nats":
+			host := configDict["host"].(string)
+			port := configDict["port"].(int)
+			return s.checkNatsAlive(name, host, port)
+		default:
+			return map[string]interface{}{
+				"service_name": name,
+				"status":       "unknown",
+				"message":      "Service type not supported",
+			}, nil
+		}
 	case "retrieval":
 		// Check the extra.retrieval_type to determine which retrieval service
 		if extra, ok := configDict["extra"].(map[string]interface{}); ok {
@@ -1043,10 +1117,6 @@ func (s *Service) GetServiceDetails(configDict map[string]interface{}) (map[stri
 		return s.checkRAGFlowServerAlive(name)
 	case "file_store":
 		return s.checkMinioAlive(name)
-	case "olap":
-		return s.checkOlapAlive(name)
-	case "tracing":
-		return s.checkTracingAlive(name)
 	default:
 		return nil, nil
 	}
@@ -1121,7 +1191,7 @@ func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
 // getESClusterStats gets Elasticsearch cluster stats
 func (s *Service) getESClusterStats(name string) (map[string]interface{}, error) {
 	// Check if Elasticsearch is the doc engine
-	docEngine := common.GetEnv(common.EnvDocEngine)
+	docEngine := os.Getenv("DOC_ENGINE")
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}
@@ -1250,11 +1320,11 @@ func (s *Service) checkRAGFlowServerAlive(name string) (map[string]interface{}, 
 func (s *Service) checkMinioAlive(name string) (map[string]interface{}, error) {
 	startTime := time.Now()
 
-	// Get MinIO file store config from allConfigs
+	// Get minio config from allConfigs
 	var host string
 	var port int
 	var secure bool
-	verify := true
+	var verify bool = true
 
 	allConfigs := server.GetAllConfigs()
 	for _, config := range allConfigs {
@@ -1358,53 +1428,11 @@ func (s *Service) checkTaskExecutorAlive(name string) (map[string]interface{}, e
 func (s *Service) checkNatsAlive(name string, ip string, port int) (map[string]interface{}, error) {
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
-	if msgQueueEngine == nil {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "Message queue engine not initialized",
-		}, nil
-	}
-
 	status := msgQueueEngine.CheckStatus()
 
 	return map[string]interface{}{
 		"service_name": name,
 		"status":       status,
-	}, nil
-}
-
-// checkTracingAlive checks if tracing is alive
-func (s *Service) checkTracingAlive(name string) (map[string]interface{}, error) {
-	return map[string]interface{}{
-		"service_name": name,
-		"status":       "unknown",
-		"message":      "Tracing health check not implemented",
-	}, nil
-}
-
-// checkOlapAlive checks if ClickHouse is alive
-func (s *Service) checkOlapAlive(name string) (map[string]interface{}, error) {
-	clickhouseDriver := clickhouse.GetDriver()
-	if clickhouseDriver == nil {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "unknown",
-		}, nil
-	}
-
-	status, err := clickhouseDriver.Status()
-	if err != nil {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"message":      fmt.Sprintf("error: %s", err.Error()),
-		}, nil
-	}
-
-	return map[string]interface{}{
-		"service_name": name,
-		"status":       "alive",
-		"message":      status,
 	}, nil
 }
 
@@ -1536,7 +1564,7 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 
 	// DOC_ENGINE
-	docEngine := common.GetEnv(common.EnvDocEngine)
+	docEngine := os.Getenv("DOC_ENGINE")
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}
@@ -1546,17 +1574,17 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// DEFAULT_SUPERUSER_EMAIL
-	defaultSuperuserEmail := common.GetEnv(common.EnvDefaultSuperuserEmail)
+	defaultSuperuserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
 	if defaultSuperuserEmail == "" {
 		defaultSuperuserEmail = "admin@ragflow.io"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   common.EnvDefaultSuperuserEmail,
+		"env":   "DEFAULT_SUPERUSER_EMAIL",
 		"value": defaultSuperuserEmail,
 	})
 
 	// DB_TYPE
-	dbType := common.GetEnv(common.EnvDBType)
+	dbType := os.Getenv("DB_TYPE")
 	if dbType == "" {
 		dbType = "mysql"
 	}
@@ -1566,7 +1594,7 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// DEVICE
-	device := common.GetEnv(common.EnvDevice)
+	device := os.Getenv("DEVICE")
 	if device == "" {
 		device = "cpu"
 	}
@@ -1576,12 +1604,12 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// STORAGE_IMPL
-	storageImpl := common.GetEnv(common.EnvStorageImpl)
+	storageImpl := os.Getenv("STORAGE_IMPL")
 	if storageImpl == "" {
 		storageImpl = "MINIO"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   common.EnvStorageImpl,
+		"env":   "STORAGE_IMPL",
 		"value": storageImpl,
 	})
 
@@ -1591,8 +1619,8 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 // Version methods
 
 // GetVersion get RAGFlow version
-func (s *Service) GetVersion() (string, string) {
-	return common.GetRAGFlowVersion(), common.GetRAGFlowType()
+func (s *Service) GetVersion() string {
+	return utility.GetRAGFlowVersion()
 }
 
 // Sandbox methods
@@ -1650,7 +1678,8 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 		Timestamp:  message.Timestamp,
 		Ext:        message.Ext,
 	}
-	return UpdateServer(message.ServerName, status)
+	GlobalServerStore.UpdateServerInfo(message.ServerName, status)
+	return common.CodeLicenseValid, ""
 }
 
 // InitDefaultAdmin initialize default admin user

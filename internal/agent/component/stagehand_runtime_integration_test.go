@@ -48,7 +48,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"ragflow/internal/common"
 	"testing"
 	"time"
 
@@ -82,9 +81,9 @@ import (
 // against https://www.bbc.com/news/world — returns a non-empty
 // summary string in ~10s.
 func TestStagehandRuntime_Extract(t *testing.T) {
-	apiKey := common.GetEnv(common.EnvOpenAIApiKey)
-	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
-	model := common.GetEnv(common.EnvOpenAIModel)
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	baseURL := os.Getenv("OPENAI_BASE_URL")
+	model := os.Getenv("OPENAI_MODEL")
 	if apiKey == "" || baseURL == "" || model == "" {
 		t.Skipf("missing required env (OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL); skipping")
 	}
@@ -92,7 +91,7 @@ func TestStagehandRuntime_Extract(t *testing.T) {
 	// Default schema: single string. Optional override via env:
 	// STAGEHAND_EXTRACT_SCHEMA_JSON='{"type":"object",...}'.
 	var schema map[string]any
-	if raw := common.GetEnv(common.EnvStageHandExtractSchemaJSON); raw != "" {
+	if raw := os.Getenv("STAGEHAND_EXTRACT_SCHEMA_JSON"); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &schema); err != nil {
 			t.Fatalf("STAGEHAND_EXTRACT_SCHEMA_JSON is not valid JSON: %v", err)
 		}
@@ -143,7 +142,7 @@ func TestStagehandRuntime_Extract(t *testing.T) {
 	t.Logf("extraction result:\n%s", resultJSON)
 
 	// Dump for external observers.
-	dumpPath := common.GetEnv(common.EnvStageHandExtractResultFile)
+	dumpPath := os.Getenv("STAGEHAND_EXTRACT_RESULT_FILE")
 	if dumpPath == "" {
 		dumpPath = "/tmp/stagehand_extract_result.txt"
 	}
@@ -167,7 +166,7 @@ func truncateSchema(s map[string]any) string {
 // binary is missing. We don't fail on miss because the runtime
 // falls back to a GitHub download.
 func cacheDirGuess() string {
-	if v := common.GetEnv(common.EnvXDGCacheHome); v != "" {
+	if v := os.Getenv("XDG_CACHE_HOME"); v != "" {
 		return filepath.Join(v, "stagehand", "lib")
 	}
 	home, err := os.UserHomeDir()
@@ -185,9 +184,9 @@ func cacheDirGuess() string {
 //
 // Skipped unless OPENAI_* env vars are configured.
 func TestBrowser_E2E_Extract(t *testing.T) {
-	apiKey := common.GetEnv(common.EnvOpenAIApiKey)
-	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
-	model := common.GetEnv(common.EnvOpenAIModel)
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	baseURL := os.Getenv("OPENAI_BASE_URL")
+	model := os.Getenv("OPENAI_MODEL")
 	if apiKey == "" || baseURL == "" || model == "" {
 		t.Skipf("missing required env (OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL); skipping")
 	}

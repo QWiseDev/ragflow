@@ -18,7 +18,6 @@ import { useTranslation } from 'react-i18next';
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
-import { useLoadingPause } from '@/hooks/use-loading-pause';
 import {
   currentReg,
   parseCitationIndex,
@@ -31,7 +30,6 @@ import classNames from 'classnames';
 import { omit } from 'lodash';
 import { pipe } from 'lodash/fp';
 import reactStringReplace from 'react-string-replace';
-import { LoadingDots } from '../loading-dots';
 import { Button } from '../ui/button';
 import {
   HoverCard,
@@ -54,7 +52,6 @@ const MarkdownContent = ({
   reference,
   clickDocumentButton,
   content,
-  loading,
 }: {
   content: string;
   loading: boolean;
@@ -75,15 +72,12 @@ const MarkdownContent = ({
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
-    const thinkSummary = loading
-      ? `${t('chat.thinking')}...`
-      : t('chat.thought');
     return pipe(
-      (value: string) => replaceThinkToSection(value, thinkSummary),
+      replaceThinkToSection,
       replaceRetrievingToSection,
       preprocessLaTeX,
     )(nextText);
-  }, [content, loading, t]);
+  }, [content, t]);
 
   useEffect(() => {
     const docAggs = reference?.doc_aggs;
@@ -266,7 +260,6 @@ const MarkdownContent = ({
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
-  const showLoadingDots = useLoadingPause(loading, content);
 
   return (
     <div dir={dir} className={styles.markdownContentWrapper}>
@@ -305,9 +298,6 @@ const MarkdownContent = ({
       >
         {contentWithCursor}
       </Markdown>
-      {showLoadingDots && (
-        <LoadingDots className="ml-1 inline-block text-text-secondary" />
-      )}
     </div>
   );
 };

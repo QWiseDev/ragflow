@@ -40,11 +40,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
 from api.db.joint_services.memory_message_service import handle_save_to_memory_task
-from api.db.joint_services.tenant_model_service import (
-    get_tenant_default_model_by_type,
-    resolve_model_config,
-    get_model_config_by_id,
-)
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, abort_doc_chunking_counter
 from common.constants import LLMType
@@ -154,10 +150,6 @@ class TaskHandler:
 
     @staticmethod
     def _is_standard_chunking_task(task_type: str) -> bool:
-        from rag.svr.task_executor_refactor.dataset_structure_merger import (
-            STRUCTURE_MERGE_TASK_TYPES,
-        )
-
         task_type = (task_type or "").lower()
         return task_type not in {
             "memory",
@@ -169,7 +161,7 @@ class TaskHandler:
             "evaluation",
             "reembedding",
             "clone",
-        } | STRUCTURE_MERGE_TASK_TYPES and not task_type.startswith("dataflow")
+        } and not task_type.startswith("dataflow")
 
     async def handle_task(self) -> None:
         try:
@@ -245,10 +237,6 @@ class TaskHandler:
                 return
 
             # Route to appropriate handler
-            from rag.svr.task_executor_refactor.dataset_structure_merger import (
-                is_structure_merge_task,
-            )
-
             if task_type == "raptor":
                 await self._run_raptor(embedding_model, vector_size)
             elif task_type == "graphrag":
@@ -275,12 +263,6 @@ class TaskHandler:
                     embedding_model,
                     self._load_chunks_for_doc,
                 )
-            elif is_structure_merge_task(task_type):
-                from rag.svr.task_executor_refactor.dataset_structure_merger import (
-                    run_structure_merge,
-                )
-
-                await run_structure_merge(self._task_context)
             elif task_type == "evaluation":
                 await self._run_evaluation()
             elif task_type == "reembedding":
@@ -333,13 +315,8 @@ class TaskHandler:
         task_language = ctx.language
 
         try:
-            if ctx.tenant_embd_id:
-                try:
-                    embd_model_config = get_model_config_by_id(task_tenant_id, LLMType.EMBEDDING, ctx.tenant_embd_id)
-                except LookupError:
-                    embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
-            elif task_embedding_id:
-                embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+            if task_embedding_id:
+                embd_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
             else:
                 embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
             embedding_model = LLMBundle(task_tenant_id, embd_model_config, lang=task_language)
@@ -395,7 +372,7 @@ class TaskHandler:
                 return
 
         # Bind LLM for raptor
-        chat_model_config = resolve_model_config(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
+        chat_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
         with LLMBundle(task_tenant_id, chat_model_config, lang=ctx.language) as chat_model:
             # Run RAPTOR
             raptor_service = RaptorService(ctx=ctx)
@@ -511,7 +488,7 @@ class TaskHandler:
 
         graphrag_conf = kb_parser_config.get("graphrag", {})
         start_ts = timer()
-        chat_model_config = resolve_model_config(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
+        chat_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
         with LLMBundle(task_tenant_id, chat_model_config, lang=task_language) as chat_model:
             with_resolution = graphrag_conf.get("resolution", False)
             with_community = graphrag_conf.get("community", False)
@@ -744,7 +721,6 @@ class TaskHandler:
             "content_with_weight",
             "page_num_int",
             "top_int",
-            "compile_kwd",
         ]
         order_by = OrderByExpr()
         order_by.asc("page_num_int")
@@ -757,15 +733,7 @@ class TaskHandler:
                     settings.docStoreConn.search,
                     select_fields,
                     [],
-                    {
-                        "doc_id": [doc_id],
-                        "available_int": 1,
-                        # Compilation writes its output back to the same
-                        # document index. Exclude those rows in the query so
-                        # they cannot change offset pagination while this
-                        # task is still streaming source chunks.
-                        "must_not": {"exists": "compile_kwd"},
-                    },
+                    {"doc_id": [doc_id], "available_int": 1},
                     [],
                     order_by,
                     offset,
@@ -803,7 +771,7 @@ class TaskHandler:
     def _build_toc(cls, ctx: TaskContext, docs: List[Dict], progress_cb: Callable) -> Optional[Dict]:
         """Build table of contents."""
         progress_cb(msg="Start to generate table of content ...")
-        chat_model_config = resolve_model_config(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
+        chat_model_config = get_model_config_from_provider_instance(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
         with LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language) as chat_mdl:
             docs = sorted(
                 docs,

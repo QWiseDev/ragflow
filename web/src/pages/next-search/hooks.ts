@@ -149,6 +149,7 @@ export const useTestChunkRetrieval = (
     mutateAsync,
   } = useMutation({
     mutationKey: ['testChunk'], // This method is invalid
+    gcTime: 0,
     mutationFn: async (values: any) => {
       const { data } = await retrievalTestFunc({
         page,
@@ -199,6 +200,7 @@ export const useTestChunkAllRetrieval = (
     mutateAsync,
   } = useMutation({
     mutationKey: ['testChunkAll'], // This method is invalid
+    gcTime: 0,
     mutationFn: async (values: any) => {
       const { data } = await retrievalTestFunc({
         page,

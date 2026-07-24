@@ -36,7 +36,7 @@ func (dao *UserDAO) Create(user *entity.User) error {
 }
 
 // GetByID get user by ID
-func (dao *UserDAO) GetByID(ctx context.Context, id uint) (*entity.User, error) {
+func (dao *UserDAO) GetByID(id uint) (*entity.User, error) {
 	var user entity.User
 	err := DB.First(&user, id).Error
 	if err != nil {
@@ -97,7 +97,7 @@ func (dao *UserDAO) UpdateAccessToken(user *entity.User, token string) error {
 }
 
 // List list users (only active users with status != "0")
-func (dao *UserDAO) List(offset, limit int, name, status, sort, orderBy string) ([]*entity.User, int64, error) {
+func (dao *UserDAO) List(offset, limit int) ([]*entity.User, int64, error) {
 	var users []*entity.User
 	var total int64
 

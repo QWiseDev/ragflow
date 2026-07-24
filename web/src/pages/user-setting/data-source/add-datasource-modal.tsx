@@ -1,13 +1,13 @@
 import { DynamicForm, FormFieldConfig } from '@/components/dynamic-form';
 import { Modal } from '@/components/ui/modal/modal';
 import { IModalProps } from '@/interfaces/common';
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
+  DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
   getCommonExtraDefaultValues,
-  getDataSourceFormBaseFields,
   getDataSourceFieldsWithExtras,
   mergeDataSourceFormValues,
 } from './constant';
@@ -21,26 +21,16 @@ const AddDataSourceModal = ({
   onOk,
 }: IModalProps<FieldValues> & { sourceData?: IDataSorceInfo }) => {
   const { t } = useTranslation();
-  const fields = useMemo<FormFieldConfig[]>(() => {
-    if (!sourceData) {
-      return [];
-    }
-    return [
-      ...getDataSourceFormBaseFields(t),
-      ...getDataSourceFieldsWithExtras(t, sourceData.id as any),
-    ] as FormFieldConfig[];
-  }, [sourceData, t]);
+  const [fields, setFields] = useState<FormFieldConfig[]>([]);
 
-  const defaultValues = useMemo<FieldValues>(
-    () =>
-      mergeDataSourceFormValues(
-        DataSourceFormDefaultValues[
-          sourceData?.id as keyof typeof DataSourceFormDefaultValues
-        ] as FieldValues,
-        getCommonExtraDefaultValues(),
-      ) as FieldValues,
-    [sourceData],
-  );
+  useEffect(() => {
+    if (sourceData) {
+      setFields([
+        ...DataSourceFormBaseFields,
+        ...getDataSourceFieldsWithExtras(sourceData.id as any),
+      ] as FormFieldConfig[]);
+    }
+  }, [sourceData]);
 
   const handleOk = async (values?: FieldValues) => {
     await onOk?.(values);
@@ -68,7 +58,14 @@ const AddDataSourceModal = ({
         onSubmit={(data) => {
           console.log(data);
         }}
-        defaultValues={defaultValues}
+        defaultValues={
+          mergeDataSourceFormValues(
+            DataSourceFormDefaultValues[
+              sourceData?.id as keyof typeof DataSourceFormDefaultValues
+            ] as FieldValues,
+            getCommonExtraDefaultValues(),
+          ) as FieldValues
+        }
         labelClassName="font-normal"
       >
         <div className=" absolute bottom-0 right-0 left-0 flex items-center justify-end w-full gap-2 py-6 px-6">

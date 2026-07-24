@@ -31,8 +31,6 @@
 
 package parser
 
-import "context"
-
 // ParseResult is the structured return value of a successful parse.
 // Exactly one of the payload fields (JSON / Markdown / Text / HTML)
 // is populated on success, matching the Python contract — see
@@ -86,5 +84,5 @@ type ParseResult struct {
 // ParseResultProducer is the parser package's single structured-output
 // contract. Every parser returned by GetParser must implement it.
 type ParseResultProducer interface {
-	ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult
+	ParseWithResult(filename string, data []byte) ParseResult
 }

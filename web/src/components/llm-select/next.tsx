@@ -14,9 +14,9 @@ export interface NextInnerLLMSelectProps {
   onChange?: (value: string) => void;
   disabled?: boolean;
   filter?: string;
+  showSpeech2TextModel?: boolean;
   triggerTestId?: string;
   optionTestIdPrefix?: string;
-  ownerTenantId?: string;
 }
 
 const NextInnerLLMSelect = forwardRef<
@@ -28,24 +28,28 @@ const NextInnerLLMSelect = forwardRef<
       value,
       disabled,
       filter,
+      showSpeech2TextModel = false,
       triggerTestId,
       optionTestIdPrefix,
-      ownerTenantId,
     },
     ref,
   ) => {
     const { t } = useTranslation();
     const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
+    const ttsModel = useMemo(() => {
+      return showSpeech2TextModel ? [LlmModelType.Speech2text] : [];
+    }, [showSpeech2TextModel]);
+
     const modelTypes = useMemo(() => {
       if (filter === LlmModelType.Chat) {
-        return ['chat'];
+        return [LlmModelType.Chat];
       } else if (filter === LlmModelType.Image2text) {
-        return ['vision'];
+        return [LlmModelType.Image2text, ...ttsModel];
       } else {
-        return ['chat', 'vision'];
+        return [LlmModelType.Chat, LlmModelType.Image2text, ...ttsModel];
       }
-    }, [filter]);
+    }, [filter, ttsModel]);
 
     return (
       <Select disabled={disabled} value={value}>
@@ -60,7 +64,7 @@ const NextInnerLLMSelect = forwardRef<
               data-testid={triggerTestId}
             >
               <SelectValue placeholder={t('common.pleaseSelect')}>
-                <LLMLabel value={value} ownerTenantId={ownerTenantId} />
+                <LLMLabel value={value} />
               </SelectValue>
             </SelectTrigger>
           </PopoverTrigger>
@@ -68,7 +72,6 @@ const NextInnerLLMSelect = forwardRef<
             <LlmSettingFieldItems
               modelTypes={modelTypes}
               llmOptionTestIdPrefix={optionTestIdPrefix}
-              ownerTenantId={ownerTenantId}
             ></LlmSettingFieldItems>
           </PopoverContent>
         </Popover>

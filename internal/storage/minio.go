@@ -273,24 +273,6 @@ func (m *MinioStorage) BucketExists(bucket string) bool {
 	return exists
 }
 
-func (m *MinioStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
-	ctx := context.Background()
-
-	var objects []string
-	for obj := range m.client.ListObjects(ctx, bucket, minio.ListObjectsOptions{
-		Prefix:    "",
-		Recursive: true,
-	}) {
-		if obj.Err != nil {
-			common.Warn("Failed to list objects", zap.Error(obj.Err))
-			return nil, obj.Err
-		}
-		objects = append(objects, obj.Key)
-	}
-
-	return objects, nil
-}
-
 // RemoveBucket removes a bucket and all its objects
 func (m *MinioStorage) RemoveBucket(bucket string) error {
 	actualBucket := bucket
@@ -402,5 +384,3 @@ func (m *MinioStorage) Move(srcBucket, srcPath, destBucket, destPath string) boo
 	}
 	return false
 }
-
-func (m *MinioStorage) Close() error { return nil }

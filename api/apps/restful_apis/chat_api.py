@@ -27,11 +27,11 @@ from quart import Response, request
 
 from api.apps import current_user, login_required
 from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config
-from api.db.joint_services.tenant_model_service import get_api_key, get_tenant_default_model_by_type, resolve_model_config
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_api_key, split_model_name
 from api.db.services.chunk_feedback_service import ChunkFeedbackService
 from api.db.services.conversation_service import ConversationService, structure_answer
-from api.db.services.dialog_service import DialogService, gen_mindmap, rag_agent
-from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
+from api.db.services.dialog_service import DialogService, async_chat, gen_mindmap
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import TenantService, UserTenantService
@@ -141,15 +141,15 @@ def _has_knowledge_placeholder(prompt_config):
 def _validate_name(name, *, required=True):
     if name is None:
         if required:
-            return None, "`name` is required"
+            return None, "`name` is required."
         return None, None
     if not isinstance(name, str):
-        return None, "chat name must be a string"
+        return None, "Chat name must be a string."
     name = name.strip()
     if not name:
-        return None, "`name` is required" if required else "`name` cannot be empty"
+        return None, "`name` is required." if required else "`name` cannot be empty."
     if len(name.encode("utf-8")) > 255:
-        return None, f"chat name length is {len(name.encode('utf-8'))} which is larger than 255"
+        return None, f"Chat name length is {len(name.encode('utf-8'))} which is larger than 255."
     return name, None
 
 
@@ -270,17 +270,17 @@ async def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
 
     conf_model_type = (llm_setting or {}).get("model_type")
     if isinstance(conf_model_type, str):
-        model_type = conf_model_type if conf_model_type in {"chat", "vision"} else "chat"
+        model_type = conf_model_type if conf_model_type in {"chat", "image2text"} else "chat"
     elif isinstance(conf_model_type, list):
-        model_type = "vision" if "vision" in conf_model_type else "chat"
+        model_type = "image2text" if "image2text" in conf_model_type else "chat"
     else:
         model_type = "chat"
     try:
         await thread_pool_exec(
-            resolve_model_config,
+            get_model_config_from_provider_instance,
             tenant_id=tenant_id,
+            model_name=llm_id,
             model_type=model_type,
-            model_ref=llm_id,
         )
     except Exception as e:
         logging.error(f"Fail to get model config for {llm_id}: {e}")
@@ -298,9 +298,9 @@ async def _validate_rerank_id(rerank_id, tenant_id):
         return None
     try:
         await thread_pool_exec(
-            resolve_model_config,
+            get_model_config_from_provider_instance,
             tenant_id=tenant_id,
-            model_ref=rerank_id,
+            model_name=rerank_id,
             model_type="rerank",
         )
     except Exception as e:
@@ -337,9 +337,9 @@ async def _validate_dataset_ids(dataset_ids, tenant_id):
             return f"The dataset {dataset_id} doesn't own parsed file"
         kbs.append(kb)
 
-    err = validate_dataset_embedding_models(kbs)
-    if err:
-        return err
+    embd_ids = [split_model_name(kb.embd_id)[0] for kb in kbs]
+    if len(set(embd_ids)) > 1:
+        return f"Datasets use different embedding models: {[kb.embd_id for kb in kbs]}"
 
     return normalized_ids
 
@@ -366,7 +366,7 @@ async def create():
 
         # Validate tenant_id should not be provided
         if req.get("tenant_id"):
-            return get_data_error_result(message="`tenant_id` must not be provided")
+            return get_data_error_result(message="`tenant_id` must not be provided.")
 
         # Validate name
         name, err = _validate_name(req.get("name"), required=True)
@@ -399,9 +399,9 @@ async def create():
             #     return get_data_error_result(message=err)
 
         req.setdefault("kb_ids", [])
-        req.setdefault("llm_id", tenant.tenant_llm_id)
+        req.setdefault("llm_id", tenant.llm_id)
         if req["llm_id"] is None:
-            req["llm_id"] = tenant.tenant_llm_id
+            req["llm_id"] = tenant.llm_id
         req.setdefault("llm_setting", {})
         req.setdefault("description", "A helpful Assistant")
         req.setdefault("top_n", 6)
@@ -424,7 +424,7 @@ async def create():
             tenant_id=current_user.id,
             status=StatusEnum.VALID.value,
         ):
-            return get_data_error_result(message="duplicated chat name in creating chat")
+            return get_data_error_result(message="Duplicated chat name in creating chat.")
 
         req["id"] = get_uuid()
         req["tenant_id"] = current_user.id
@@ -537,7 +537,7 @@ async def update_chat(chat_id):
         current_chat = current_chat.to_dict()
 
         if req.get("tenant_id"):
-            return get_data_error_result(message="`tenant_id` must not be provided")
+            return get_data_error_result(message="`tenant_id` must not be provided.")
 
         if "name" in req:
             name, err = _validate_name(req.get("name"), required=True)
@@ -588,7 +588,7 @@ async def update_chat(chat_id):
                 status=StatusEnum.VALID.value,
             )
         ):
-            return get_data_error_result(message="duplicated chat name")
+            return get_data_error_result(message="Duplicated chat name.")
 
         if not DialogService.update_by_id(chat_id, req):
             return get_data_error_result(message="Chat not found!")
@@ -676,7 +676,7 @@ async def patch_chat(chat_id):
                 status=StatusEnum.VALID.value,
             )
         ):
-            return get_data_error_result(message="duplicated chat name")
+            return get_data_error_result(message="Duplicated chat name.")
 
         if not DialogService.update_by_id(chat_id, req):
             return get_data_error_result(message="Failed to update chat.")
@@ -1064,7 +1064,7 @@ async def transcription():
     await uploaded.save(temp_audio_path)
 
     try:
-        default_asr_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.ASR)
+        default_asr_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.SPEECH2TEXT)
     except Exception as e:
         return get_data_error_result(message=str(e))
 
@@ -1127,7 +1127,7 @@ async def recommendation():
 
     chat_id = search_config.get("chat_id", "")
     if chat_id:
-        chat_model_config = resolve_model_config(current_user.id, LLMType.CHAT, chat_id)
+        chat_model_config = get_model_config_from_provider_instance(current_user.id, LLMType.CHAT, chat_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.CHAT)
     chat_mdl = LLMBundle(current_user.id, chat_model_config)
@@ -1256,7 +1256,7 @@ async def session_completion(chat_id_in_arg=""):
                     # start_to_think/end_to_think events.
                     legacy_answer = ""
                     final_answer = None
-                    async for ans in rag_agent(dia, msg, True, session_id=session_id, **req):
+                    async for ans in async_chat(dia, msg, True, session_id=session_id, **req):
                         ans = _format_answer(ans)
                         if ans.get("final"):
                             final_answer = ans
@@ -1293,7 +1293,7 @@ async def session_completion(chat_id_in_arg=""):
                         payload = _sanitize_json_floats({"code": 0, "message": "", "data": final_chunk})
                         yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
                 else:
-                    async for ans in rag_agent(dia, msg, True, session_id=session_id, **req):
+                    async for ans in async_chat(dia, msg, True, session_id=session_id, **req):
                         ans = _format_answer(ans)
                         payload = _sanitize_json_floats({"code": 0, "message": "", "data": ans})
                         yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
@@ -1313,7 +1313,7 @@ async def session_completion(chat_id_in_arg=""):
             return resp
 
         answer = None
-        async for ans in rag_agent(dia, msg, False, session_id=session_id, **req):
+        async for ans in async_chat(dia, msg, False, session_id=session_id, **req):
             answer = _format_answer(ans)
             if conv is not None:
                 await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())

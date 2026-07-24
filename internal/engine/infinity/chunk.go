@@ -51,16 +51,6 @@ var pagerankAdjustLocks [pagerankAdjustLockCount]sync.Mutex
 // The full table name is built as "{baseName}_{datasetID}"
 // For skill index (datasetID="skill"), tableName is just baseName and uses skill_infinity_mapping.json
 func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
-	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
-	if err != nil {
-		return fmt.Errorf("failed to get database: %w", err)
-	}
-	defer release()
-
-	return e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID)
-}
-
-func (e *infinityEngine) createChunkStoreWithDB(db *infinity.Database, baseName, datasetID string, vectorSize int, parserID string) error {
 	vecSize := vectorSize
 
 	// Determine table name and mapping file based on index type
@@ -92,11 +82,17 @@ func (e *infinityEngine) createChunkStoreWithDB(db *infinity.Database, baseName,
 		return fmt.Errorf("failed to parse mapping file: %w", err)
 	}
 
+	// Get database
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	if err != nil {
+		return fmt.Errorf("failed to get database: %w", err)
+	}
+
 	// Determine vector column name
 	vectorColName := fmt.Sprintf("q_%d_vec", vecSize)
 
 	// Check if table already exists
-	exists, err := e.tableExistsWithDB(db, tableName)
+	exists, err := e.tableExists(ctx, tableName)
 	if err != nil {
 		return fmt.Errorf("failed to check if table exists: %w", err)
 	}
@@ -272,11 +268,10 @@ func (e *infinityEngine) InsertChunks(ctx context.Context, chunks []map[string]i
 	tableName := buildChunkTableName(baseName, datasetID)
 	common.Info("InfinityConnection.InsertChunks called", zap.String("tableName", tableName), zap.Int("chunkCount", len(chunks)))
 
-	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to get database: %w", err)
 	}
-	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -312,7 +307,7 @@ func (e *infinityEngine) InsertChunks(ctx context.Context, chunks []map[string]i
 		}
 
 		// Create table
-		if err := e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID); err != nil {
+		if err := e.CreateChunkStore(ctx, baseName, datasetID, vectorSize, parserID); err != nil {
 			return nil, fmt.Errorf("Failed to create table: %w", err)
 		}
 
@@ -392,11 +387,10 @@ func (e *infinityEngine) UpdateChunks(ctx context.Context, condition map[string]
 	tableName := buildChunkTableName(baseName, datasetID)
 	common.Info("InfinityConnection.UpdateChunks called", zap.String("tableName", tableName), zap.Any("condition", condition))
 
-	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
 		return fmt.Errorf("Failed to get database: %w", err)
 	}
-	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -546,7 +540,7 @@ func (e *infinityEngine) AdjustChunkPagerank(ctx context.Context, baseName, chun
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if e.client == nil || e.client.pool == nil {
+	if e.client == nil || e.client.conn == nil {
 		return fmt.Errorf("Infinity client not initialized")
 	}
 
@@ -555,11 +549,10 @@ func (e *infinityEngine) AdjustChunkPagerank(ctx context.Context, baseName, chun
 	lock.Lock()
 	defer lock.Unlock()
 
-	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
-	defer release()
 	table, err := db.GetTable(tableName)
 	if err != nil {
 		return fmt.Errorf("failed to get table %s: %w", tableName, err)
@@ -633,11 +626,10 @@ func (e *infinityEngine) AdjustChunkPagerank(ctx context.Context, baseName, chun
 func (e *infinityEngine) DeleteChunks(ctx context.Context, condition map[string]interface{}, baseName string, datasetID string) (int64, error) {
 	tableName := buildChunkTableName(baseName, datasetID)
 
-	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get database: %w", err)
 	}
-	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -708,11 +700,10 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 		offset = 0
 	}
 
-	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
-	defer release()
 
 	isSkillIndex := false
 	for _, idx := range req.IndexNames {
@@ -832,11 +823,19 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 				filterParts = append(filterParts, fmt.Sprintf("available_int=%v", availInt))
 			} else if status, ok := req.Filter["status"]; ok {
 				filterParts = append(filterParts, fmt.Sprintf("status='%s'", status))
-			} else if !isSkillIndex {
+			} else {
+				if isSkillIndex {
+					filterParts = append(filterParts, "status='1'")
+				} else {
+					filterParts = append(filterParts, "available_int=1")
+				}
+			}
+		} else {
+			if isSkillIndex {
+				filterParts = append(filterParts, "status='1'")
+			} else {
 				filterParts = append(filterParts, "available_int=1")
 			}
-		} else if !isSkillIndex {
-			filterParts = append(filterParts, "available_int=1")
 		}
 	}
 
@@ -1026,8 +1025,12 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 				}
 
 				denseFilterStr := filterStr
-				if denseFilterStr == "" && !isSkillIndex {
-					denseFilterStr = "available_int=1"
+				if denseFilterStr == "" {
+					if isSkillIndex {
+						denseFilterStr = "status='1'"
+					} else {
+						denseFilterStr = "available_int=1"
+					}
 				}
 
 				if hasTextMatch {
@@ -1039,11 +1042,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 					safeQuery := strings.ReplaceAll(questionText, "'", "''")
 					safeFields := strings.ReplaceAll(fieldsStr, "'", "''")
 					filterFulltext := fmt.Sprintf("filter_fulltext('%s', '%s')", safeFields, safeQuery)
-					if denseFilterStr != "" {
-						denseFilterStr = fmt.Sprintf("(%s) AND %s", denseFilterStr, filterFulltext)
-					} else {
-						denseFilterStr = filterFulltext
-					}
+					denseFilterStr = fmt.Sprintf("(%s) AND %s", denseFilterStr, filterFulltext)
 				}
 				threshold := "0.0"
 				if matchDense != nil && matchDense.ExtraOptions != nil {
@@ -1210,7 +1209,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 
 // GetChunk gets a chunk by ID
 func (e *infinityEngine) GetChunk(ctx context.Context, tableName, chunkID string, datasetIDs []string) (interface{}, error) {
-	if e.client == nil || e.client.pool == nil {
+	if e.client == nil || e.client.conn == nil {
 		return nil, fmt.Errorf("Infinity client not initialized")
 	}
 
@@ -1226,11 +1225,10 @@ func (e *infinityEngine) GetChunk(ctx context.Context, tableName, chunkID string
 	}
 
 	// Try each table and collect results from all tables
-	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
-	defer release()
 
 	// Collect chunks from all tables (same as Python's concat_dataframes)
 	allChunks := make(map[string]map[string]interface{})
@@ -1980,6 +1978,7 @@ func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 		"authors_tks":         "authors",
 		"authors_sm_tks":      "authors",
 		"message_type":        "message_type_kwd",
+		"status":              "status_int",
 	}
 
 	skillIndex := false
@@ -2441,14 +2440,9 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 				d["questions"] = utility.ConvertToString(v)
 			}
 		case "kb_id":
-			// 1. First check if it's a string
-			if str, ok := v.(string); ok {
-				d["kb_id"] = str
-			} else if list := utility.ConvertToStringSlice(v); len(list) > 0 {
-				// 2. If it's a list, convert and take the first element
+			if list, ok := v.([]interface{}); ok && len(list) > 0 {
 				d["kb_id"] = list[0]
 			} else {
-				// 3. Otherwise assign v directly
 				d["kb_id"] = v
 			}
 		case "position_int":

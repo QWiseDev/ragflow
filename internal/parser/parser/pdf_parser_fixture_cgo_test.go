@@ -19,8 +19,7 @@ func TestPDFParser_ParseWithResult_CGOFixture(t *testing.T) {
 		t.Fatalf("ReadFile(%s): %v", path, err)
 	}
 	pdf := NewPDFParser()
-	ctx := t.Context()
-	res := pdf.ParseWithResult(ctx, "Doc1.pdf", data)
+	res := pdf.ParseWithResult("Doc1.pdf", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -50,8 +49,7 @@ func TestPDFParser_ParseWithResult_CGOFixtureMarkdown(t *testing.T) {
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{"output_format": "markdown"})
 
-	ctx := t.Context()
-	res := pdf.ParseWithResult(ctx, "Doc1.pdf", data)
+	res := pdf.ParseWithResult("Doc1.pdf", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -74,8 +72,7 @@ func TestPDFParser_ParseWithResult_CGOFixturePlainText(t *testing.T) {
 	}
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{"parse_method": "plain_text"})
-	ctx := t.Context()
-	res := pdf.ParseWithResult(ctx, "Doc1.pdf", data)
+	res := pdf.ParseWithResult("Doc1.pdf", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}

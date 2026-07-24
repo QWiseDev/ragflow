@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"sort"
 	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -99,6 +100,23 @@ func NormalizeSectionPositions(sections []pdf.Section) {
 			sections[i].Positions = util.ExtractPositions(sections[i].PositionTag)
 		}
 	}
+}
+
+// SortByPageThenY sorts boxes by page → vertical key → x0.
+func SortByPageThenY(boxes []pdf.TextBox, sortByTop bool) {
+	key := func(b pdf.TextBox) float64 { return b.Bottom }
+	if sortByTop {
+		key = func(b pdf.TextBox) float64 { return b.Top }
+	}
+	sort.Slice(boxes, func(i, j int) bool {
+		if boxes[i].PageNumber != boxes[j].PageNumber {
+			return boxes[i].PageNumber < boxes[j].PageNumber
+		}
+		if key(boxes[i]) != key(boxes[j]) {
+			return key(boxes[i]) < key(boxes[j])
+		}
+		return boxes[i].X0 < boxes[j].X0
+	})
 }
 
 // SectionsToMarkdown converts Sections to a markdown string.

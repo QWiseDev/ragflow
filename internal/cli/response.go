@@ -19,7 +19,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"ragflow/internal/entity/models"
 	"strings"
 )
 
@@ -130,9 +129,6 @@ func (r *CommonDataResponse) SetOutputFormat(format OutputFormat) {
 func (r *CommonDataResponse) orderedMetricTable() []map[string]interface{} {
 	table := make([]map[string]interface{}, 0)
 	for key, value := range r.Data {
-		if _, ok := value.([]interface{}); ok {
-			continue
-		}
 		table = append(table, map[string]interface{}{
 			"Metric": key,
 			"Value":  value,
@@ -530,11 +526,10 @@ func (r *MessageResponse) PrintOut() {
 }
 
 type NonStreamResponse struct {
-	Code             int                `json:"code"`
-	ReasoningContent string             `json:"reasoning_content"`
-	Answer           string             `json:"answer"`
-	Message          string             `json:"message"`
-	Usage            *models.TokenUsage `json:"usage"`
+	Code             int    `json:"code"`
+	ReasoningContent string `json:"reasoning_content"`
+	Answer           string `json:"answer"`
+	Message          string `json:"message"`
 	Duration         float64
 	OutputFormat     OutputFormat
 }
@@ -557,10 +552,6 @@ func (r *NonStreamResponse) PrintOut() {
 			fmt.Printf("Thinking: %s\n", r.ReasoningContent)
 		}
 		fmt.Printf("Answer: %s\n", r.Answer)
-		if r.Usage != nil {
-			fmt.Printf("Input tokens: %v\n", r.Usage.PromptTokens)
-			fmt.Printf("Output tokens: %v\n", r.Usage.CompletionTokens)
-		}
 		fmt.Printf("Time: %f\n", r.Duration)
 	} else {
 		fmt.Println("ERROR")

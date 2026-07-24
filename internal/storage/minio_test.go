@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"os"
 	"ragflow/internal/utility"
 	"testing"
 	"time"
@@ -41,6 +42,22 @@ func getMinioConfig() (*server.MinioConfig, error) {
 
 	log.Printf("MinioConfig: %+v", config)
 	return config, nil
+}
+
+// getEnv gets environment variable or returns default value
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+// getEnvBool gets environment variable as bool or returns default value
+func getEnvBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		return value == "true" || value == "1" || value == "yes"
+	}
+	return defaultValue
 }
 
 // newTestMinioStorage creates a new MinIO storage instance for testing

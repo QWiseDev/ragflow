@@ -68,7 +68,7 @@ class VariableOption extends MenuOption {
   label: string;
   value: string;
   parentLabel: string | JSX.Element;
-  icon?: JSX.Element;
+  icon?: ReactNode;
   type?: string;
   options?: VariableOption[];
 
@@ -83,7 +83,7 @@ class VariableOption extends MenuOption {
     this.label = label;
     this.value = value;
     this.parentLabel = parentLabel;
-    this.icon = icon as JSX.Element | undefined;
+    this.icon = icon;
     this.type = type;
   }
 }
@@ -388,13 +388,10 @@ export default function VariablePickerMenuPlugin({
   const previousValue = useRef<string | undefined>();
   const [queryString, setQueryString] = React.useState<string>('');
 
-  let options: VariablePickerMenuOptionType[] =
-    useFilterQueryVariableOptionsByTypes({
-      types,
-    }) as VariablePickerMenuOptionType[];
+  let options = useFilterQueryVariableOptionsByTypes({ types });
 
   if (baseOptions) {
-    options = baseOptions;
+    options = baseOptions as typeof options;
   }
 
   const unifiedOptions = useMemo(() => {
@@ -530,7 +527,7 @@ export default function VariablePickerMenuPlugin({
           icon?: ReactNode;
         }>
       >((pre, cur) => {
-        return pre.concat(cur.options as typeof pre);
+        return pre.concat(cur.options);
       }, []);
 
       // agent structured output

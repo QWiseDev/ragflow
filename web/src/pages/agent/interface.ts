@@ -11,8 +11,6 @@ export interface IOperatorForm {
 export interface INextOperatorForm {
   node?: RAGFlowNodeType;
   nodeId?: string;
-  onValuesChange?(values: any): void;
-  hideOutputs?: boolean;
 }
 
 export interface IGenerateParameter {

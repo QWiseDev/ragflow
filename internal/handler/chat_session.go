@@ -55,7 +55,7 @@ func NewChatSessionHandler(chatSessionService *service.ChatSessionService, userS
 func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	userID := user.ID
@@ -68,8 +68,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	}
 
 	// Call service to list chat sessions
-	ctx := c.Request.Context()
-	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID)
+	result, err := h.chatSessionService.ListChatSessions(userID, chatID)
 	if err != nil {
 		// Check if it's an authorization error
 		if err.Error() == "Only owner of dialog authorized for this operation" {
@@ -116,25 +115,25 @@ type ChatCompletionsRequest struct {
 func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	userID := user.ID
 
 	var rawBody map[string]interface{}
 	if err := c.ShouldBindJSON(&rawBody); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
 	var req ChatCompletionsRequest
 	b, err := json.Marshal(rawBody)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if err = json.Unmarshal(b, &req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
@@ -241,17 +240,16 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	userID := user.ID
 	chatID, sessionID := c.Param("chat_id"), c.Param("session_id")
 
-	ctx := c.Request.Context()
-	result, code, err := h.chatSessionService.GetSession(ctx, userID, chatID, sessionID)
+	result, code, err := h.chatSessionService.GetSession(userID, chatID, sessionID)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 	common.SuccessWithData(c, result, "success")
@@ -261,7 +259,7 @@ func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -290,14 +288,13 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 		req = map[string]interface{}{}
 	}
 
-	ctx := c.Request.Context()
-	result, code, err := h.chatSessionService.CreateSession(ctx, userID, chatID, req)
+	result, code, err := h.chatSessionService.CreateSession(userID, chatID, req)
 	if err != nil {
 		if code == common.CodeAuthenticationError {
 			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
 		}
-		common.ErrorWithCode(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
@@ -308,7 +305,7 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -337,14 +334,13 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 		req = map[string]interface{}{}
 	}
 
-	ctx := c.Request.Context()
-	result, message, code, err := h.chatSessionService.DeleteSessions(ctx, userID, chatID, req)
+	result, message, code, err := h.chatSessionService.DeleteSessions(userID, chatID, req)
 	if err != nil {
 		if code == common.CodeAuthenticationError {
 			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
 		}
-		common.ErrorWithCode(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
@@ -354,7 +350,7 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -376,10 +372,9 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
-	result, code, err := h.chatSessionService.UpdateSession(ctx, userID, chatID, sessionID, req)
+	result, code, err := h.chatSessionService.UpdateSession(userID, chatID, sessionID, req)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 	common.SuccessWithData(c, result, "success")
@@ -388,20 +383,19 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	userID := user.ID
 	chatID, sessionID, msgID := c.Param("chat_id"), c.Param("session_id"), c.Param("msg_id")
 
-	ctx := c.Request.Context()
-	result, code, err := h.chatSessionService.DeleteSessionMessage(ctx, userID, chatID, sessionID, msgID)
+	result, code, err := h.chatSessionService.DeleteSessionMessage(userID, chatID, sessionID, msgID)
 	if err != nil {
 		if code == common.CodeAuthenticationError {
 			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
 		}
-		common.ErrorWithCode(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 	common.SuccessWithData(c, result, "success")
@@ -410,7 +404,7 @@ func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
 func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -438,7 +432,7 @@ func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
 			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
 		}
-		common.ErrorWithCode(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 	common.SuccessWithData(c, result, "success")

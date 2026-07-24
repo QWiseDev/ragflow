@@ -3,7 +3,7 @@ import { TFunction } from 'i18next';
 
 export const jiraConstant = (t: TFunction) => [
   {
-    label: t('setting.dataSourceFieldJiraUserEmail'),
+    label: 'Jira User Email',
     name: 'config.credentials.jira_user_email',
     type: FormFieldType.Text,
     required: true,
@@ -12,18 +12,13 @@ export const jiraConstant = (t: TFunction) => [
     shouldRender: (formValues: any) => formValues?.config?.is_cloud !== false,
     customValidate: (val: string, formValues: any) => {
       if (formValues?.config?.is_cloud !== false) {
-        return (
-          Boolean(val) ||
-          t('setting.dataSourceValidationFieldRequired', {
-            label: t('setting.dataSourceFieldJiraUserEmail'),
-          })
-        );
+        return Boolean(val) || 'Jira User Email is required';
       }
       return true;
     },
   },
   {
-    label: t('setting.dataSourceFieldJiraUsername'),
+    label: 'Jira Username',
     name: 'config.credentials.jira_username',
     type: FormFieldType.Text,
     required: true,
@@ -31,18 +26,13 @@ export const jiraConstant = (t: TFunction) => [
     shouldRender: (formValues: any) => formValues?.config?.is_cloud === false,
     customValidate: (val: string, formValues: any) => {
       if (formValues?.config?.is_cloud === false) {
-        return (
-          Boolean(val) ||
-          t('setting.dataSourceValidationFieldRequired', {
-            label: t('setting.dataSourceFieldJiraUsername'),
-          })
-        );
+        return Boolean(val) || 'Jira Username is required';
       }
       return true;
     },
   },
   {
-    label: t('setting.dataSourceFieldJiraBaseUrl'),
+    label: 'Jira Base URL',
     name: 'config.base_url',
     type: FormFieldType.Text,
     required: true,
@@ -50,7 +40,7 @@ export const jiraConstant = (t: TFunction) => [
     tooltip: t('setting.jiraBaseUrlTip'),
   },
   {
-    label: t('setting.dataSourceFieldProjectKey'),
+    label: 'Project Key',
     name: 'config.project_key',
     type: FormFieldType.Text,
     required: false,
@@ -58,7 +48,7 @@ export const jiraConstant = (t: TFunction) => [
     tooltip: t('setting.jiraProjectKeyTip'),
   },
   {
-    label: t('setting.dataSourceFieldCustomJql'),
+    label: 'Custom JQL',
     name: 'config.jql_query',
     type: FormFieldType.Textarea,
     required: false,
@@ -66,14 +56,14 @@ export const jiraConstant = (t: TFunction) => [
     tooltip: t('setting.jiraJqlTip'),
   },
   {
-    label: t('setting.dataSourceFieldBatchSize'),
+    label: 'Batch Size',
     name: 'config.batch_size',
     type: FormFieldType.Number,
     required: false,
     tooltip: t('setting.jiraBatchSizeTip'),
   },
   {
-    label: t('setting.dataSourceFieldAttachmentSizeLimit'),
+    label: 'Attachment Size Limit (bytes)',
     name: 'config.attachment_size_limit',
     type: FormFieldType.Number,
     required: false,
@@ -81,21 +71,21 @@ export const jiraConstant = (t: TFunction) => [
     tooltip: t('setting.jiraAttachmentSizeTip'),
   },
   {
-    label: t('setting.dataSourceFieldLabelsToSkip'),
+    label: 'Labels to Skip',
     name: 'config.labels_to_skip',
     type: FormFieldType.Tag,
     required: false,
     tooltip: t('setting.jiraLabelsTip'),
   },
   {
-    label: t('setting.dataSourceFieldCommentEmailBlacklist'),
+    label: 'Comment Email Blacklist',
     name: 'config.comment_email_blacklist',
     type: FormFieldType.Tag,
     required: false,
     tooltip: t('setting.jiraBlacklistTip'),
   },
   {
-    label: t('setting.dataSourceFieldIncludeComments'),
+    label: 'Include Comments',
     name: 'config.include_comments',
     type: FormFieldType.Checkbox,
     required: false,
@@ -103,7 +93,7 @@ export const jiraConstant = (t: TFunction) => [
     tooltip: t('setting.jiraCommentsTip'),
   },
   {
-    label: t('setting.dataSourceFieldIncludeAttachments'),
+    label: 'Include Attachments',
     name: 'config.include_attachments',
     type: FormFieldType.Checkbox,
     required: false,
@@ -111,17 +101,17 @@ export const jiraConstant = (t: TFunction) => [
     tooltip: t('setting.jiraAttachmentsTip'),
   },
   {
-    label: t('setting.dataSourceFieldMode'),
+    label: 'Mode',
     name: 'config.is_cloud',
     type: FormFieldType.Segmented,
     options: [
-      { label: t('setting.dataSourceOptionCloud'), value: true },
-      { label: t('setting.dataSourceOptionServer'), value: false },
+      { label: 'Cloud', value: true },
+      { label: 'Server', value: false },
     ],
     defaultValue: true,
   },
   {
-    label: t('setting.dataSourceFieldJiraApiToken'),
+    label: 'Jira API Token',
     name: 'config.credentials.jira_api_token',
     type: FormFieldType.Password,
     required: false,
@@ -129,18 +119,13 @@ export const jiraConstant = (t: TFunction) => [
     shouldRender: (formValues: any) => formValues?.config?.is_cloud !== false,
     customValidate: (val: string, formValues: any) => {
       if (formValues?.config?.is_cloud !== false) {
-        return (
-          Boolean(val) ||
-          t('setting.dataSourceValidationFieldRequired', {
-            label: t('setting.dataSourceFieldJiraApiToken'),
-          })
-        );
+        return Boolean(val) || 'Jira API Token is required';
       }
       return true;
     },
   },
   {
-    label: t('setting.dataSourceFieldJiraPassword'),
+    label: 'Jira Password',
     name: 'config.credentials.jira_password',
     type: FormFieldType.Password,
     required: false,
@@ -148,18 +133,13 @@ export const jiraConstant = (t: TFunction) => [
     shouldRender: (formValues: any) => formValues?.config?.is_cloud === false,
     customValidate: (val: string, formValues: any) => {
       if (formValues?.config?.is_cloud === false) {
-        return (
-          Boolean(val) ||
-          t('setting.dataSourceValidationFieldRequired', {
-            label: t('setting.dataSourceFieldJiraPassword'),
-          })
-        );
+        return Boolean(val) || 'Jira Password is required';
       }
       return true;
     },
   },
   {
-    label: t('setting.dataSourceFieldUseScopedToken'),
+    label: 'Use Scoped Token',
     name: 'config.scoped_token',
     type: FormFieldType.Checkbox,
     required: false,

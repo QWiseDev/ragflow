@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"ragflow/internal/common"
 	"strconv"
 	"strings"
 	"sync"
@@ -53,7 +52,7 @@ type xinferenceChatResponse struct {
 }
 
 type xinferenceModelListResponse struct {
-	Data []ModelListItem `json:"data"`
+	Data []DSModel `json:"data"`
 }
 
 // NewXinferenceModel creates a new Xinference model instance.
@@ -73,7 +72,7 @@ func (x *XinferenceModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (x *XinferenceModel) Name() string {
-	return "Xinference"
+	return "xinference"
 }
 
 func normalizeXinferenceBaseURL(base string) string {
@@ -109,8 +108,41 @@ func xinferenceReasoningFromMap(value map[string]interface{}) string {
 	return ""
 }
 
+func buildXinferenceChatBody(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
+	reqBody := map[string]interface{}{
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   stream,
+	}
+
+	if chatModelConfig != nil {
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		}
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
+		}
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
+		}
+		if chatModelConfig.Stop != nil {
+			reqBody["stop"] = *chatModelConfig.Stop
+		}
+	}
+
+	return reqBody
+}
+
 // ChatWithMessages sends multiple messages with roles and returns the response.
-func (x *XinferenceModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (x *XinferenceModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -126,13 +158,13 @@ func (x *XinferenceModel) ChatWithMessages(ctx context.Context, modelName string
 	baseURL = normalizeXinferenceBaseURL(baseURL)
 	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	reqBody := buildXinferenceChatBody(modelName, messages, false, chatModelConfig)
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -180,7 +212,7 @@ func (x *XinferenceModel) ChatWithMessages(ctx context.Context, modelName string
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender.
-func (x *XinferenceModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (x *XinferenceModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -202,7 +234,7 @@ func (x *XinferenceModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 	baseURL = normalizeXinferenceBaseURL(baseURL)
 	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody := buildXinferenceChatBody(modelName, messages, true, chatModelConfig)
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
@@ -309,7 +341,7 @@ type xinferenceEmbeddingResponse struct {
 }
 
 // Embed POSTs the input texts to the tenant's Xinference
-func (x *XinferenceModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (x *XinferenceModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -344,7 +376,7 @@ func (x *XinferenceModel) Embed(ctx context.Context, modelName *string, texts []
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -417,7 +449,7 @@ type xinferenceRerankResponse struct {
 // in the API's ranking order. Caller may sort by Index to recover
 // original input order. Xinference rerank models are launched with
 // --model-type rerank and exposed under the OpenAI-compatible base URL.
-func (x *XinferenceModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (x *XinferenceModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -456,7 +488,7 @@ func (x *XinferenceModel) Rerank(ctx context.Context, modelName *string, query s
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -508,7 +540,7 @@ func (x *XinferenceModel) Rerank(ctx context.Context, modelName *string, query s
 	return &rerankResponse, nil
 }
 
-func (x *XinferenceModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+func (x *XinferenceModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -617,11 +649,11 @@ func (x *XinferenceModel) TranscribeAudio(ctx context.Context, modelName *string
 	}, nil
 }
 
-func (x *XinferenceModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (x *XinferenceModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", x.Name())
 }
 
-func (x *XinferenceModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+func (x *XinferenceModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -683,21 +715,21 @@ func (x *XinferenceModel) AudioSpeech(ctx context.Context, modelName *string, au
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (x *XinferenceModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (x *XinferenceModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", x.Name())
 }
 
-func (x *XinferenceModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (x *XinferenceModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", x.Name())
 }
 
-func (x *XinferenceModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (x *XinferenceModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", x.Name())
 }
 
 // ListModels returns the model IDs exposed by Xinference's OpenAI-compatible
 // /v1/models endpoint.
-func (x *XinferenceModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (x *XinferenceModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -709,7 +741,7 @@ func (x *XinferenceModel) ListModels(ctx context.Context, apiConfig *APIConfig) 
 	baseURL = normalizeXinferenceBaseURL(baseURL)
 	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -744,19 +776,19 @@ func (x *XinferenceModel) ListModels(ctx context.Context, apiConfig *APIConfig) 
 	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
-func (x *XinferenceModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
+func (x *XinferenceModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", x.Name())
 }
 
-func (x *XinferenceModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	_, err := x.ListModels(ctx, apiConfig)
+func (x *XinferenceModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := x.ListModels(apiConfig)
 	return err
 }
 
-func (x *XinferenceModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (x *XinferenceModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", x.Name())
 }
 
-func (x *XinferenceModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (x *XinferenceModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", x.Name())
 }

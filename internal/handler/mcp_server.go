@@ -17,7 +17,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,7 +27,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/mcp"
 	"ragflow/internal/service"
-	dataset "ragflow/internal/service/dataset"
 )
 
 // MCPRetrievalService abstracts the dataset retrieval operations needed
@@ -74,7 +72,7 @@ func NewMCPServerHandler(
 func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -114,7 +112,7 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 
 // MCPListDatasets wraps DatasetService.ListDatasets for the MCP tool handler,
 // filling in default values for parameters that the MCP tool does not expose.
-func MCPListDatasets(ds *dataset.DatasetService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+func MCPListDatasets(ds *service.DatasetService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
 	data, total, _, err := ds.ListDatasets(
 		"", "", page, pageSize, orderby, desc,
 		"", nil, "", userID,
@@ -124,8 +122,8 @@ func MCPListDatasets(ds *dataset.DatasetService, userID string, page, pageSize i
 
 // MCPListChats wraps ChatService.ListChats for the MCP tool handler,
 // converting the typed response into a generic []map[string]interface{}.
-func MCPListChats(ctx context.Context, chatService *service.ChatService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-	resp, err := chatService.ListChats(ctx, userID, "1", "", page, pageSize, orderby, desc, nil)
+func MCPListChats(cs *service.ChatService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+	resp, err := cs.ListChats(userID, "1", "", page, pageSize, orderby, desc)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -143,7 +141,7 @@ func MCPListChats(ctx context.Context, chatService *service.ChatService, userID 
 // MCPRetrieval executes a retrieval request on behalf of the MCP tool handler.
 // It translates the mcp.RetrievalRequest into a service.SearchDatasetsRequest
 // and calls DatasetService.SearchDatasets. The result is serialized as JSON.
-func MCPRetrieval(ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
+func MCPRetrieval(ds *service.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
 	// Resolve dataset IDs: if none provided, fetch ALL accessible datasets
 	// across all pages (matching Python _fetch_all_datasets behaviour).
 	datasetIDs := req.DatasetIDs

@@ -370,7 +370,6 @@ const GmailTokenField = ({ value, onChange }: GmailTokenFieldProps) => {
         onValueChange={handleValueChange}
         accept={{ '*.json': [FileMimeType.Json] }}
         maxFileCount={1}
-        showFolderTab={false}
         description={'Upload your Gmail OAuth JSON file.'}
       />
 

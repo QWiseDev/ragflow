@@ -121,7 +121,7 @@ def add_tenant_for_admin(user_info: dict, role: str):
         "embd_id": settings.EMBEDDING_MDL,
         "asr_id": settings.ASR_MDL,
         "parser_ids": settings.PARSERS,
-        "img2txt_id": settings.VISION_MDL,
+        "img2txt_id": settings.IMAGE2TEXT_MDL,
         "rerank_id": settings.RERANK_MDL,
     }
     usr_tenant = {"tenant_id": user_info["id"], "user_id": user_info["id"], "invited_by": user_info["id"], "role": role}
@@ -152,13 +152,13 @@ def check_admin_auth(func):
 def login_admin(email: str, password: str):
     """
     :param email: admin email
-    :param password: string before decrypt (RSA encrypted + base64 encoded)
+    :param password: string before decrypt
     """
     users = UserService.query(email=email)
     if not users:
         raise UserNotFoundError(email)
-    decrypted = decrypt(password)
-    user = UserService.query_user(email, decrypted)
+    psw = decrypt(password)
+    user = UserService.query_user(email, psw)
     if not user:
         raise AdminException("Email and password do not match!")
     if not user.is_superuser:

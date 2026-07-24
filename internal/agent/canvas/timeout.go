@@ -40,7 +40,7 @@ package canvas
 
 import (
 	"context"
-	"ragflow/internal/common"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -145,7 +145,7 @@ func resolveTimeoutFromContext(ctx context.Context, componentClass string) time.
 // unset / empty / non-numeric / non-positive. Invalid input must
 // never widen the timeout silently.
 func parseSecondsEnv(name string) (time.Duration, bool) {
-	v := common.GetEnv(name)
+	v := os.Getenv(name)
 	if v == "" {
 		return 0, false
 	}

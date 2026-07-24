@@ -40,7 +40,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"ragflow/internal/common"
+	"os"
 	"sync"
 
 	"ragflow/internal/dao"
@@ -275,7 +275,7 @@ var errSettingsMalformed = errors.New("sandbox: admin-panel settings JSON malfor
 // "self_managed" to match the Python
 // `_load_provider_from_settings` default.
 func resolveProviderType() ProviderType {
-	if v := common.GetEnv(common.EnvSandboxProviderType); v != "" {
+	if v := os.Getenv("SANDBOX_PROVIDER_TYPE"); v != "" {
 		return ProviderType(v)
 	}
 	return ProviderSelfManaged

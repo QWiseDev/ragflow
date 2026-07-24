@@ -26,6 +26,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { v4 as uuid } from 'uuid';
 import { useTranslate } from './common-hooks';
 import { useSetPaginationParams } from './route-hook';
 import { useSaveSetting } from './use-user-setting-request';
@@ -125,11 +126,8 @@ export const useHandleSearchChange = () => {
   return { handleInputChange, searchString, pagination, setPagination };
 };
 
-export const useGetPagination = (options?: { pageSize?: number }) => {
-  const [pagination, setPagination] = useState({
-    page: 1,
-    pageSize: options?.pageSize ?? 10,
-  });
+export const useGetPagination = () => {
+  const [pagination, setPagination] = useState({ page: 1, pageSize: 10 });
   const { t } = useTranslate('common');
 
   const onPageChange: Pagination['onChange'] = useCallback(
@@ -154,7 +152,6 @@ export const useGetPagination = (options?: { pageSize?: number }) => {
 
   return {
     pagination: currentPagination,
-    setPagination,
   };
 };
 
@@ -713,14 +710,12 @@ export const useRegenerateMessage = ({
       if (message.id) {
         removeMessagesAfterCurrentMessage(message.id);
         const index = messages.findIndex((x) => x.id === message.id);
-        // Always pass the truncated history explicitly, even when it is
-        // empty (regenerating the first question), so the backend can
-        // overwrite the session with it via pass_all_history_messages.
-        const nextMessages = index !== -1 ? messages.slice(0, index) : [];
+        let nextMessages;
+        if (index !== -1) {
+          nextMessages = messages.slice(0, index);
+        }
         sendMessage({
-          // Keep the original id so the question/answer pair id stays
-          // consistent between local state and the persisted session.
-          message: { ...message },
+          message: { ...message, id: uuid() },
           messages: nextMessages,
         });
       }

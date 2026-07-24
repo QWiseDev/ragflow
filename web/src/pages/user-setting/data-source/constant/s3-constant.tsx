@@ -1,6 +1,6 @@
 import { FilterFormField, FormFieldType } from '@/components/dynamic-form';
 import { TFunction } from 'i18next';
-import { BedrockRegionList } from '../../setting-model/constants';
+import { BedrockRegionList } from '../../setting-model/constant';
 
 const awsRegionOptions = BedrockRegionList.map((r) => ({
   label: r,
@@ -8,13 +8,13 @@ const awsRegionOptions = BedrockRegionList.map((r) => ({
 }));
 export const S3Constant = (t: TFunction) => [
   {
-    label: t('setting.dataSourceFieldBucketName'),
+    label: 'Bucket Name',
     name: 'config.bucket_name',
     type: FormFieldType.Text,
     required: true,
   },
   {
-    label: t('setting.dataSourceFieldRegion'),
+    label: 'Region',
     name: 'config.credentials.region',
     type: FormFieldType.Select,
     required: false,
@@ -27,13 +27,13 @@ export const S3Constant = (t: TFunction) => [
         credentials.aws_access_key_id || credentials.aws_secret_access_key,
       );
       if (bucketType === 's3' && hasAccessKey) {
-        return Boolean(val) || t('setting.dataSourceS3RegionRequired');
+        return Boolean(val) || 'Region is required when using access key';
       }
       return true;
     },
   },
   {
-    label: t('setting.dataSourceFieldPrefix'),
+    label: 'Prefix',
     name: 'config.prefix',
     type: FormFieldType.Text,
     required: false,
@@ -41,25 +41,22 @@ export const S3Constant = (t: TFunction) => [
   },
 
   {
-    label: t('setting.dataSourceFieldMode'),
+    label: 'Mode',
     name: 'config.bucket_type',
     type: FormFieldType.Segmented,
     options: [
       { label: 'S3', value: 's3' },
-      {
-        label: t('setting.dataSourceOptionS3Compatible'),
-        value: 's3_compatible',
-      },
+      { label: 'S3 Compatible', value: 's3_compatible' },
     ],
   },
   {
-    label: t('setting.dataSourceFieldAuthentication'),
+    label: 'Authentication',
     name: 'config.credentials.authentication_method',
     type: FormFieldType.Segmented,
     options: [
-      { label: t('setting.dataSourceOptionAccessKey'), value: 'access_key' },
-      { label: t('setting.dataSourceOptionIamRole'), value: 'iam_role' },
-      { label: t('setting.dataSourceOptionAssumeRole'), value: 'assume_role' },
+      { label: 'Access Key', value: 'access_key' },
+      { label: 'IAM Role', value: 'iam_role' },
+      { label: 'Assume Role', value: 'assume_role' },
     ],
     shouldRender: (formValues: any) => {
       const bucketType = formValues?.config?.bucket_type;
@@ -68,7 +65,7 @@ export const S3Constant = (t: TFunction) => [
   },
   {
     name: 'config.credentials.aws_access_key_id',
-    label: t('setting.dataSourceFieldAwsAccessKeyId'),
+    label: 'AWS Access Key ID',
     type: FormFieldType.Text,
     customValidate: (val: string, formValues: any) => {
       const authMode = formValues?.config?.credentials?.authentication_method;
@@ -78,9 +75,7 @@ export const S3Constant = (t: TFunction) => [
         !val &&
         (authMode === 'access_key' || bucketType === 's3_compatible')
       ) {
-        return t('setting.dataSourceValidationFieldRequired', {
-          label: t('setting.dataSourceFieldAwsAccessKeyId'),
-        });
+        return 'AWS Access Key ID is required';
       }
       return true;
     },
@@ -92,18 +87,13 @@ export const S3Constant = (t: TFunction) => [
   },
   {
     name: 'config.credentials.aws_secret_access_key',
-    label: t('setting.dataSourceFieldAwsSecretAccessKey'),
+    label: 'AWS Secret Access Key',
     type: FormFieldType.Password,
     customValidate: (val: string, formValues: any) => {
       const authMode = formValues?.config?.credentials?.authentication_method;
       const bucketType = formValues?.config?.bucket_type;
       if (authMode === 'access_key' || bucketType === 's3_compatible') {
-        return (
-          Boolean(val) ||
-          t('setting.dataSourceValidationFieldRequired', {
-            label: t('setting.dataSourceFieldAwsSecretAccessKey'),
-          })
-        );
+        return Boolean(val) || '"AWS Secret Access Key" is required';
       }
       return true;
     },
@@ -115,20 +105,15 @@ export const S3Constant = (t: TFunction) => [
   },
   {
     name: 'config.credentials.aws_role_arn',
-    label: t('setting.dataSourceFieldRoleArn'),
-    tooltip: t('setting.dataSourceS3RoleArnTip'),
+    label: 'Role ARN',
+    tooltip: 'The role will be assumed by the runtime environment.',
     type: FormFieldType.Text,
     placeholder: 'arn:aws:iam::123456789012:role/YourRole',
     customValidate: (val: string, formValues: any) => {
       const authMode = formValues?.config?.credentials?.authentication_method;
       const bucketType = formValues?.config?.bucket_type;
       if (authMode === 'iam_role' || bucketType === 's3') {
-        return (
-          Boolean(val) ||
-          t('setting.dataSourceValidationFieldRequired', {
-            label: t('setting.dataSourceFieldAwsSecretAccessKey'),
-          })
-        );
+        return Boolean(val) || '"AWS Secret Access Key" is required';
       }
       return true;
     },
@@ -149,23 +134,20 @@ export const S3Constant = (t: TFunction) => [
     },
     render: () => (
       <div className="text-sm text-text-secondary bg-bg-card border border-border-button rounded-md px-3 py-2">
-        {t('setting.dataSourceS3AssumeRoleTip')}
+        {'No credentials required. Uses the default environment role.'}
       </div>
     ),
   },
   {
     name: 'config.credentials.addressing_style',
-    label: t('setting.dataSourceFieldAddressingStyle'),
+    label: 'Addressing Style',
     tooltip: t('setting.S3CompatibleAddressingStyleTip'),
     required: false,
     type: FormFieldType.Select,
     defaultValue: 'virtual',
     options: [
-      {
-        label: t('setting.dataSourceOptionVirtualHostedStyle'),
-        value: 'virtual',
-      },
-      { label: t('setting.dataSourceOptionPathStyle'), value: 'path' },
+      { label: 'Virtual Hosted Style', value: 'virtual' },
+      { label: 'Path Style', value: 'path' },
     ],
     shouldRender: (formValues: any) => {
       // const authMode = formValues?.config?.authMode;
@@ -175,7 +157,7 @@ export const S3Constant = (t: TFunction) => [
   },
   {
     name: 'config.credentials.endpoint_url',
-    label: t('setting.dataSourceFieldEndpointUrl'),
+    label: 'Endpoint URL',
     tooltip: t('setting.S3CompatibleEndpointUrlTip'),
     placeholder: 'https://fsn1.your-objectstorage.com',
     required: false,

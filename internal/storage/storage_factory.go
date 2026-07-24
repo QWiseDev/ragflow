@@ -60,14 +60,7 @@ func InitStorageFactory() error {
 	return nil
 }
 
-// CloseStorage closes the storage connection
-func CloseStorage() error {
-	factory := GetStorageFactory()
-	factory.mu.Lock()
-	defer factory.mu.Unlock()
-	return factory.storage.Close()
-}
-
+// initStorage initializes the specific storage implementation
 func (f *StorageFactory) initStorage() error {
 	switch f.config.Type {
 	case "minio":
@@ -76,8 +69,6 @@ func (f *StorageFactory) initStorage() error {
 		return f.initS3(f.config.S3)
 	case "oss":
 		return f.initOSS(f.config.OSS)
-	case "gcs":
-		return f.initGCS(f.config.GCS)
 	default:
 		return fmt.Errorf("unsupported storage type: %s", f.config.Type)
 	}
@@ -125,22 +116,6 @@ func (f *StorageFactory) initOSS(ossConfig *server.OSSConfig) error {
 	f.storageType = StorageOSS
 	f.storage = storage
 	f.config.OSS = ossConfig
-
-	return nil
-}
-
-func (f *StorageFactory) initGCS(gcsConfig *server.GCSConfig) error {
-
-	storage, err := NewGCSStorage(gcsConfig)
-	if err != nil {
-		return fmt.Errorf("failed to create GCS storage: %w", err)
-	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.storageType = StorageGCS
-	f.storage = storage
-	f.config.GCS = gcsConfig
 
 	return nil
 }

@@ -67,19 +67,12 @@ func (c *HTTPClient) APIBase() string {
 
 // NonAPIBase returns the non-API base URL
 func (c *HTTPClient) NonAPIBase() string {
-	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+	return fmt.Sprintf("%s:%d/%s", c.Host, c.Port, c.APIVersion)
 }
 
 // BuildURL builds the full URL for a given path
-func (c *HTTPClient) BuildURL(path string, authKind string) string {
-	var base string
-
-	if authKind == "none" {
-		base = c.NonAPIBase()
-	} else {
-		base = c.APIBase()
-	}
-
+func (c *HTTPClient) BuildURL(path string) string {
+	base := c.APIBase()
 	if c.VerifySSL {
 		return fmt.Sprintf("https://%s%s", base, path)
 	}
@@ -133,7 +126,7 @@ func (c *HTTPClient) Request(method, path string, authKind string, headers map[s
 		return nil, fmt.Errorf("HTTP Client is nil")
 	}
 
-	url := c.BuildURL(path, authKind)
+	url := c.BuildURL(path)
 	mergedHeaders := c.Headers(authKind, headers)
 
 	var body io.Reader
@@ -203,7 +196,7 @@ func (c *HTTPClient) RequestWithIterations(method, path string, authKind string,
 		return response, nil
 	}
 
-	url := c.BuildURL(path, authKind)
+	url := c.BuildURL(path)
 	mergedHeaders := c.Headers(authKind, headers)
 
 	var body io.Reader
@@ -285,7 +278,7 @@ func (c *HTTPClient) RequestJSON(method, path string, authKind string, headers m
 
 // UploadMultipart uploads data using multipart/form-data
 func (c *HTTPClient) UploadMultipart(path string, contentType string, body io.Reader) error {
-	url := c.BuildURL(path, "api")
+	url := c.BuildURL(path)
 
 	req, err := http.NewRequest("POST", url, body)
 	if err != nil {
@@ -329,7 +322,7 @@ func (c *HTTPClient) UploadMultipart(path string, contentType string, body io.Re
 
 // RequestStream makes an HTTP request for SSE streaming and returns the response body reader
 func (c *HTTPClient) RequestStream(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (io.ReadCloser, error) {
-	url := c.BuildURL(path, authKind)
+	url := c.BuildURL(path)
 	mergedHeaders := c.Headers(authKind, headers)
 
 	var body io.Reader

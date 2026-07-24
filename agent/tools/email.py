@@ -19,7 +19,6 @@ from abc import ABC
 import json
 import smtplib
 import logging
-import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
@@ -117,17 +116,11 @@ class Email(ToolBase, ABC):
                 if self.check_if_canceled("Email processing"):
                     return
 
-                context = ssl.create_default_context()
-                if int(self._param.smtp_port) == 465:
-                    server = smtplib.SMTP_SSL(self._param.smtp_server, self._param.smtp_port, timeout=10, context=context)
-                else:
-                    server = smtplib.SMTP(self._param.smtp_server, self._param.smtp_port, timeout=10)
-
-                with server:
+                context = smtplib.ssl.create_default_context()
+                with smtplib.SMTP(self._param.smtp_server, self._param.smtp_port) as server:
                     server.ehlo()
-                    if int(self._param.smtp_port) != 465:
-                        server.starttls(context=context)
-                        server.ehlo()
+                    server.starttls(context=context)
+                    server.ehlo()
 
                     # Login
                     smtp_username = self._param.smtp_username or self._param.email

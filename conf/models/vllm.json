@@ -1,5 +1,5 @@
 {
-  "name": "VLLM",
+  "name": "vllm",
   "rank": 975,
   "url_suffix": {
     "chat": "chat/completions",

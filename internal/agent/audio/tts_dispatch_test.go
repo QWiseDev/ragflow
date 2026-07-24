@@ -51,7 +51,6 @@ type fakeTTSDispatcher struct {
 }
 
 func (f *fakeTTSDispatcher) AudioSpeech(
-	ctx context.Context,
 	providerName, instanceName, modelName, modelID *string,
 	userID string,
 	audioContent *string,

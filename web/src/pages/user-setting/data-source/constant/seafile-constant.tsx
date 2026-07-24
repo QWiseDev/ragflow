@@ -3,7 +3,7 @@ import { TFunction } from 'i18next';
 
 export const seafileConstant = (t: TFunction) => [
   {
-    label: t('setting.dataSourceFieldSeafileServerUrl'),
+    label: 'SeaFile Server URL',
     name: 'config.seafile_url',
     type: FormFieldType.Text,
     required: true,
@@ -11,16 +11,13 @@ export const seafileConstant = (t: TFunction) => [
     tooltip: t('setting.seafileUrlTip'),
   },
   {
-    label: t('setting.dataSourceFieldSyncScope'),
+    label: 'Sync Scope',
     name: 'config.sync_scope',
     type: FormFieldType.Segmented,
     options: [
-      { label: t('setting.dataSourceOptionEntireAccount'), value: 'account' },
-      { label: t('setting.dataSourceOptionSingleLibrary'), value: 'library' },
-      {
-        label: t('setting.dataSourceOptionSpecificDirectory'),
-        value: 'directory',
-      },
+      { label: 'Entire Account', value: 'account' },
+      { label: 'Single Library', value: 'library' },
+      { label: 'Specific Directory', value: 'directory' },
     ],
     tooltip: t('setting.seafileSyncScopeTip'),
   },
@@ -40,7 +37,7 @@ export const seafileConstant = (t: TFunction) => [
     ),
   },
   {
-    label: t('setting.dataSourceFieldAccountApiToken'),
+    label: 'Account API Token',
     name: 'config.credentials.seafile_token',
     type: FormFieldType.Password,
     required: false,
@@ -59,7 +56,7 @@ export const seafileConstant = (t: TFunction) => [
     },
   },
   {
-    label: t('setting.dataSourceFieldIncludeSharedLibraries'),
+    label: 'Include Shared Libraries',
     name: 'config.include_shared',
     type: FormFieldType.Checkbox,
     required: false,
@@ -87,15 +84,11 @@ export const seafileConstant = (t: TFunction) => [
         </p>
         <ul className="list-disc list-inside space-y-0.5">
           <li>
-            <span className="font-medium">
-              {t('setting.dataSourceFieldAccountApiToken')}
-            </span>
+            <span className="font-medium">Account API Token</span>
             {' ' + t('setting.seafileTokenPanelAccountBullet')}
           </li>
           <li>
-            <span className="font-medium">
-              {t('setting.dataSourceFieldLibraryToken')}
-            </span>
+            <span className="font-medium">Library Token</span>
             {' ' + t('setting.seafileTokenPanelLibraryBullet')}
           </li>
         </ul>
@@ -103,7 +96,7 @@ export const seafileConstant = (t: TFunction) => [
     ),
   },
   {
-    label: t('setting.dataSourceFieldAccountApiToken'),
+    label: 'Account API Token',
     name: 'config.credentials.seafile_token',
     type: FormFieldType.Password,
     required: false,
@@ -114,7 +107,7 @@ export const seafileConstant = (t: TFunction) => [
     },
   },
   {
-    label: t('setting.dataSourceFieldLibraryToken'),
+    label: 'Library Token',
     name: 'config.credentials.repo_token',
     type: FormFieldType.Password,
     required: false,
@@ -137,7 +130,7 @@ export const seafileConstant = (t: TFunction) => [
     },
   },
   {
-    label: t('setting.dataSourceFieldLibraryId'),
+    label: 'Library ID',
     name: 'config.repo_id',
     type: FormFieldType.Text,
     required: false,
@@ -157,7 +150,7 @@ export const seafileConstant = (t: TFunction) => [
   },
 
   {
-    label: t('setting.dataSourceFieldDirectoryPath'),
+    label: 'Directory Path',
     name: 'config.sync_path',
     type: FormFieldType.Text,
     required: false,
@@ -175,7 +168,7 @@ export const seafileConstant = (t: TFunction) => [
   },
 
   {
-    label: t('setting.dataSourceFieldBatchSize'),
+    label: 'Batch Size',
     name: 'config.batch_size',
     type: FormFieldType.Number,
     required: false,
@@ -184,35 +177,35 @@ export const seafileConstant = (t: TFunction) => [
   },
 
   {
-    label: t('setting.dataSourceFieldAccountApiToken'),
+    label: 'Account API Token',
     name: 'config.credentials.seafile_token',
     type: FormFieldType.Password,
     required: false,
     hidden: true,
   },
   {
-    label: t('setting.dataSourceFieldLibraryToken'),
+    label: 'Library Token',
     name: 'config.credentials.repo_token',
     type: FormFieldType.Password,
     required: false,
     hidden: true,
   },
   {
-    label: t('setting.dataSourceFieldLibraryId'),
+    label: 'Library ID',
     name: 'config.repo_id',
     type: FormFieldType.Text,
     required: false,
     hidden: true,
   },
   {
-    label: t('setting.dataSourceFieldDirectoryPath'),
+    label: 'Directory Path',
     name: 'config.sync_path',
     type: FormFieldType.Text,
     required: false,
     hidden: true,
   },
   {
-    label: t('setting.dataSourceFieldIncludeSharedLibraries'),
+    label: 'Include Shared Libraries',
     name: 'config.include_shared',
     type: FormFieldType.Checkbox,
     required: false,

@@ -10,6 +10,8 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"os"
+
 	"ragflow/internal/common"
 	"ragflow/internal/harness/core/schema"
 
@@ -222,7 +224,7 @@ const (
 var checkpointHMACKey = loadCheckpointHMACKey()
 
 func loadCheckpointHMACKey() []byte {
-	if env := common.GetEnv(envHMACKey); env != "" {
+	if env := os.Getenv(envHMACKey); env != "" {
 		k, err := base64.StdEncoding.DecodeString(env)
 		if err != nil {
 			panic("checkpoint HMAC key: invalid base64 in " + envHMACKey + ": " + err.Error())

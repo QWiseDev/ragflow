@@ -19,6 +19,7 @@ import {
   useSelectedIds,
 } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
+import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { LucidePlus } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +28,7 @@ import { useManageMetadata } from '../components/metedata/hooks/use-manage-modal
 import { ManageMetadataModal } from '../components/metedata/manage-modal';
 import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 import { DatasetTable } from './dataset-table';
+import Generate from './generate-button/generate';
 import { ReparseDialog } from './reparse-dialog';
 import { useBulkOperateDataset } from './use-bulk-operate-dataset';
 import { useCreateEmptyDocument } from './use-create-empty-document';
@@ -54,6 +56,8 @@ export default function Dataset() {
     loading,
     checkValue,
   } = useFetchDocumentList();
+
+  const { data: dataSetData } = useFetchKnowledgeBaseConfiguration();
 
   const { filters, onOpenChange, filterGroup } = useSelectDatasetFilters();
 
@@ -116,6 +120,9 @@ export default function Dataset() {
           <div className="text-base font-normal">
             {t('knowledgeDetails.metadata.manageMetadata')}
           </div>
+          {/* <div className="text-sm text-text-secondary">
+            {t('knowledgeDetails.metadata.manageMetadataForDataset')}
+          </div> */}
         </div>
       ),
       documentIds: selectedRowKeys,
@@ -157,6 +164,38 @@ export default function Dataset() {
               </p>
             </div>
           }
+          preChildren={<Generate disabled={!(dataSetData.chunk_count > 0)} />}
+          // preChildren={
+          //   <Button
+          //     variant={'ghost'}
+          //     className="border border-border-button"
+          //     onClick={() =>
+          //       showManageMetadataModal({
+          //         type: MetadataType.Manage,
+          //         isCanAdd: false,
+          //         isEditField: false,
+          //         isDeleteSingleValue: true,
+          //         title: (
+          //           <div className="flex flex-col gap-2">
+          //             <div className="text-base font-normal">
+          //               {t('knowledgeDetails.metadata.manageMetadata')}
+          //             </div>
+          //             <div className="text-sm text-text-secondary">
+          //               {t(
+          //                 'knowledgeDetails.metadata.manageMetadataForDataset',
+          //               )}
+          //             </div>
+          //           </div>
+          //         ),
+          //       })
+          //     }
+          //   >
+          //     <div className="flex gap-1 items-center">
+          //       <Pen size={14} />
+          //       {t('knowledgeDetails.metadata.metadata')}
+          //     </div>
+          //   </Button>
+          // }
         >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

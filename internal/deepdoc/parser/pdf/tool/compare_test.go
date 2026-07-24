@@ -15,19 +15,19 @@ import (
 // compare the noocr variant; PY_OCR_SUFFIX to override the Python variant.
 func TestBatchCompareWithPython(t *testing.T) {
 	level := slog.LevelInfo
-	if common.GetEnv(common.EnvBatchLogLevel) == "debug" {
+	if os.Getenv("BATCH_LOG_LEVEL") == "debug" {
 		level = slog.LevelDebug
 	}
-	if common.GetEnv(common.EnvBatchLogLevel) == "warn" {
+	if os.Getenv("BATCH_LOG_LEVEL") == "warn" {
 		level = slog.LevelWarn
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 
 	goVariant := "ocr"
-	if common.GetEnv(common.EnvBatchSkipOCR) == "1" {
+	if os.Getenv("BATCH_SKIP_OCR") == "1" {
 		goVariant = "noocr"
 	}
-	pyVariant := common.GetEnv(common.EnvPYOCRSuffix)
+	pyVariant := os.Getenv("PY_OCR_SUFFIX")
 	if pyVariant == "" {
 		pyVariant = goVariant
 	}

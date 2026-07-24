@@ -78,16 +78,10 @@ export const preprocessLaTeX = (content: string) => {
   return inlineProcessedContent;
 };
 
-export function replaceThinkToSection(
-  text: string = '',
-  summary: string = 'Thinking...',
-) {
+export function replaceThinkToSection(text: string = '') {
   const pattern = /<think>([\s\S]*?)<\/think>/g;
 
-  const result = text.replace(
-    pattern,
-    `<details class="think"><summary>${summary}</summary>$1</details>`,
-  );
+  const result = text.replace(pattern, '<details class="think"><summary>Thinking...</summary>$1</details>');
 
   return result;
 }
@@ -95,10 +89,7 @@ export function replaceThinkToSection(
 export function replaceRetrievingToSection(text: string = '') {
   const pattern = /<retrieving>([\s\S]*?)<\/retrieving>/g;
 
-  const result = text.replace(
-    pattern,
-    '<details class="retrieving"><summary>Retrieving...</summary>$1</details>',
-  );
+  const result = text.replace(pattern, '<details class="retrieving"><summary>Retrieving...</summary>$1</details>');
 
   return result;
 }

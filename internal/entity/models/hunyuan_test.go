@@ -80,13 +80,13 @@ func newHunyuanForTest(baseURL string) *HunyuanModel {
 }
 
 func TestHunyuanName(t *testing.T) {
-	if got := newHunyuanForTest("http://unused").Name(); got != "Tencent Hunyuan" {
-		t.Errorf("Name()=%q, want %q", got, "Tencent Hunyuan")
+	if got := newHunyuanForTest("http://unused").Name(); got != "hunyuan" {
+		t.Errorf("Name()=%q, want %q", got, "hunyuan")
 	}
 }
 
 func TestHunyuanFactory(t *testing.T) {
-	driver, err := NewModelFactory().CreateModelDriver("Tencent Hunyuan", map[string]string{"default": "http://unused"}, URLSuffix{})
+	driver, err := NewModelFactory().CreateModelDriver("Hunyuan", map[string]string{"default": "http://unused"}, URLSuffix{})
 	if err != nil {
 		t.Fatalf("CreateModelDriver: %v", err)
 	}
@@ -123,14 +123,11 @@ func TestHunyuanChatHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	mt := 64
 	temp := 0.3
-	ctx := t.Context()
 	resp, err := newHunyuanForTest(srv.URL).ChatWithMessages(
-		ctx,
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp},
-		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -154,13 +151,10 @@ func TestHunyuanChatNoReasoning(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	ctx := t.Context()
 	resp, err := newHunyuanForTest(srv.URL).ChatWithMessages(
-		ctx,
 		"hunyuan-lite",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil,
-	)
+		&APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -173,25 +167,19 @@ func TestHunyuanChatNoReasoning(t *testing.T) {
 }
 
 func TestHunyuanChatRequiresAPIKey(t *testing.T) {
-	ctx := t.Context()
 	_, err := newHunyuanForTest("http://unused").ChatWithMessages(
-		ctx,
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil, nil,
-	)
+		&APIConfig{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
 }
 
 func TestHunyuanChatRequiresMessages(t *testing.T) {
-	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newHunyuanForTest("http://unused").ChatWithMessages(
-		ctx,
-		"hunyuan-pro", nil, &APIConfig{ApiKey: &apiKey}, nil, nil,
-	)
+		"hunyuan-pro", nil, &APIConfig{ApiKey: &apiKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
 	}
@@ -205,13 +193,10 @@ func TestHunyuanChatPropagatesHTTPError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	ctx := t.Context()
 	_, err := newHunyuanForTest(srv.URL).ChatWithMessages(
-		ctx,
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil,
-	)
+		&APIConfig{ApiKey: &apiKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}
@@ -229,12 +214,10 @@ func TestHunyuanStreamHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	var chunks []string
 	var sawDone bool
-	ctx := t.Context()
 	err := newHunyuanForTest(srv.URL).ChatStreamlyWithSender(
-		ctx,
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil,
+		&APIConfig{ApiKey: &apiKey}, nil,
 		func(c *string, _ *string) error {
 			if c == nil {
 				return nil
@@ -269,12 +252,10 @@ func TestHunyuanStreamSplitsReasoning(t *testing.T) {
 
 	apiKey := "test-key"
 	var content, reasoning []string
-	ctx := t.Context()
 	err := newHunyuanForTest(srv.URL).ChatStreamlyWithSender(
-		ctx,
 		"hunyuan-standard-256K",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil,
+		&APIConfig{ApiKey: &apiKey}, nil,
 		func(c *string, r *string) error {
 			if c != nil && r != nil {
 				t.Errorf("sender called with both args non-nil")
@@ -301,14 +282,11 @@ func TestHunyuanStreamSplitsReasoning(t *testing.T) {
 func TestHunyuanStreamRejectsExplicitFalse(t *testing.T) {
 	apiKey := "test-key"
 	stream := false
-	ctx := t.Context()
 	err := newHunyuanForTest("http://unused").ChatStreamlyWithSender(
-		ctx,
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
-		nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream must be true") {
 		t.Errorf("expected stream-true guard, got %v", err)
@@ -316,13 +294,11 @@ func TestHunyuanStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestHunyuanStreamRequiresSender(t *testing.T) {
-	ctx := t.Context()
 	apiKey := "test-key"
 	err := newHunyuanForTest("http://unused").ChatStreamlyWithSender(
-		ctx,
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "sender is required") {
 		t.Errorf("expected sender-required error, got %v", err)
 	}
@@ -335,12 +311,10 @@ func TestHunyuanStreamFailsWithoutTerminal(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	ctx := t.Context()
 	err := newHunyuanForTest(srv.URL).ChatStreamlyWithSender(
-		ctx,
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil,
+		&APIConfig{ApiKey: &apiKey}, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream ended before") {
 		t.Errorf("expected truncation error, got %v", err)
@@ -355,12 +329,10 @@ func TestHunyuanStreamRejectsMalformedFrame(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	ctx := t.Context()
 	err := newHunyuanForTest(srv.URL).ChatStreamlyWithSender(
-		ctx,
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil,
+		&APIConfig{ApiKey: &apiKey}, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "invalid SSE event") {
 		t.Errorf("expected invalid-SSE error, got %v", err)
@@ -375,12 +347,10 @@ func TestHunyuanStreamSurfacesUpstreamError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	ctx := t.Context()
 	err := newHunyuanForTest(srv.URL).ChatStreamlyWithSender(
-		ctx,
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil,
+		&APIConfig{ApiKey: &apiKey}, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "upstream stream error") {
 		t.Errorf("expected upstream-error surfacing, got %v", err)
@@ -391,7 +361,6 @@ func TestHunyuanStreamSurfacesUpstreamError(t *testing.T) {
 }
 
 func TestHunyuanListModelsHappyPath(t *testing.T) {
-	ctx := t.Context()
 	srv := newHunyuanServer(t, http.MethodGet, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -404,7 +373,7 @@ func TestHunyuanListModelsHappyPath(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	models, err := newHunyuanForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
+	models, err := newHunyuanForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -415,15 +384,13 @@ func TestHunyuanListModelsHappyPath(t *testing.T) {
 }
 
 func TestHunyuanListModelsRequiresAPIKey(t *testing.T) {
-	ctx := t.Context()
-	_, err := newHunyuanForTest("http://unused").ListModels(ctx, &APIConfig{})
+	_, err := newHunyuanForTest("http://unused").ListModels(&APIConfig{})
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
 }
 
 func TestHunyuanCheckConnectionDelegatesToListModels(t *testing.T) {
-	ctx := t.Context()
 	srv := newHunyuanServer(t, http.MethodGet, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{{"id": "hunyuan-pro"}},
@@ -432,13 +399,12 @@ func TestHunyuanCheckConnectionDelegatesToListModels(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	if err := newHunyuanForTest(srv.URL).CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
+	if err := newHunyuanForTest(srv.URL).CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Errorf("CheckConnection: %v", err)
 	}
 }
 
 func TestHunyuanCheckConnectionPropagatesError(t *testing.T) {
-	ctx := t.Context()
 	srv := newHunyuanServer(t, http.MethodGet, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"bad key"}`))
@@ -446,25 +412,23 @@ func TestHunyuanCheckConnectionPropagatesError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	err := newHunyuanForTest(srv.URL).CheckConnection(ctx, &APIConfig{ApiKey: &apiKey})
+	err := newHunyuanForTest(srv.URL).CheckConnection(&APIConfig{ApiKey: &apiKey})
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}
 }
 
 func TestHunyuanBaseURLForRegionUnknown(t *testing.T) {
-	ctx := t.Context()
 	m := newHunyuanForTest("http://unused")
 	apiKey := "test-key"
 	region := "missing"
-	_, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey, Region: &region})
+	_, err := m.ListModels(&APIConfig{ApiKey: &apiKey, Region: &region})
 	if err == nil || !strings.Contains(err.Error(), "no base URL configured") {
 		t.Errorf("expected base-URL error, got %v", err)
 	}
 }
 
 func TestHunyuanEmbedHappyPath(t *testing.T) {
-	ctx := t.Context()
 	srv := newHunyuanServer(t, http.MethodPost, "/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "hunyuan-embedding" {
 			t.Errorf("model=%v", body["model"])
@@ -486,7 +450,7 @@ func TestHunyuanEmbedHappyPath(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "hunyuan-embedding"
-	embeddings, err := newHunyuanForTest(srv.URL).Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	embeddings, err := newHunyuanForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -496,43 +460,41 @@ func TestHunyuanEmbedHappyPath(t *testing.T) {
 }
 
 func TestHunyuanEmbedValidatesInputs(t *testing.T) {
-	ctx := t.Context()
 	apiKey := "test-key"
 	model := "hunyuan-embedding"
 
-	if embeddings, err := newHunyuanForTest("http://unused").Embed(ctx, nil, nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil || len(embeddings) != 0 {
+	if embeddings, err := newHunyuanForTest("http://unused").Embed(nil, nil, &APIConfig{ApiKey: &apiKey}, nil); err != nil || len(embeddings) != 0 {
 		t.Errorf("empty input: embeddings=%+v err=%v", embeddings, err)
 	}
-	if _, err := newHunyuanForTest("http://unused").Embed(ctx, nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := newHunyuanForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("nil model: %v", err)
 	}
 	emptyModel := ""
-	if _, err := newHunyuanForTest("http://unused").Embed(ctx, &emptyModel, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := newHunyuanForTest("http://unused").Embed(&emptyModel, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("empty model: %v", err)
 	}
-	if _, err := newHunyuanForTest("http://unused").Embed(ctx, &model, []string{"x"}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := newHunyuanForTest("http://unused").Embed(&model, []string{"x"}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("nil api config: %v", err)
 	}
-	if _, err := newHunyuanForTest("http://unused").Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := newHunyuanForTest("http://unused").Embed(&model, []string{"x"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("missing api key: %v", err)
 	}
 	emptyKey := ""
-	if _, err := newHunyuanForTest("http://unused").Embed(ctx, &model, []string{"x"}, &APIConfig{ApiKey: &emptyKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := newHunyuanForTest("http://unused").Embed(&model, []string{"x"}, &APIConfig{ApiKey: &emptyKey}, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("empty api key: %v", err)
 	}
 }
 
 func TestHunyuanAudioOCRReturnNoSuchMethod(t *testing.T) {
-	ctx := t.Context()
 	m := newHunyuanForTest("http://unused")
 	model := "x"
-	if _, err := m.TranscribeAudio(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: %v", err)
 	}
-	if _, err := m.AudioSpeech(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.AudioSpeech(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: %v", err)
 	}
-	if _, err := m.OCRFile(ctx, &model, nil, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}
 }

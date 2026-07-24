@@ -12,7 +12,6 @@ import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { initialTokenChunkerValues } from '../../constant/pipeline';
-import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -42,11 +41,7 @@ export const FormSchema = z.object({
 
 export type TokenChunkerFormSchemaType = z.infer<typeof FormSchema>;
 
-const TokenChunkerForm = ({
-  node,
-  onValuesChange,
-  hideOutputs,
-}: INextOperatorForm) => {
+const TokenChunkerForm = ({ node }: INextOperatorForm) => {
   const defaultValues = useFormValues(initialTokenChunkerValues, node);
   const { t } = useTranslation();
 
@@ -74,7 +69,6 @@ const TokenChunkerForm = ({
   });
 
   useWatchFormChange(node?.id, form);
-  useFormChangeCallback(form, onValuesChange);
 
   return (
     <Form {...form}>
@@ -142,7 +136,7 @@ const TokenChunkerForm = ({
                 ))}
               </div>
             </section>
-            <BlockButton type="button" onClick={() => append({ value: '\n' })}>
+            <BlockButton onClick={() => append({ value: '\n' })}>
               {t('common.add')}
             </BlockButton>
           </>
@@ -217,11 +211,9 @@ const TokenChunkerForm = ({
           </fieldset>
         )}
       </FormWrapper>
-      {!hideOutputs && (
-        <div className="p-5">
-          <Output list={outputList}></Output>
-        </div>
-      )}
+      <div className="p-5">
+        <Output list={outputList}></Output>
+      </div>
     </Form>
   );
 };

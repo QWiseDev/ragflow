@@ -116,7 +116,6 @@ class ConnectorService(CommonService):
                 poll_range_start,
                 total_docs_indexed=total_docs_indexed,
                 task_type=ConnectorTaskType.SYNC,
-                run_immediately=True,
             )
 
             if prune_enabled:
@@ -124,7 +123,6 @@ class ConnectorService(CommonService):
                     connector_id,
                     c2k.kb_id,
                     task_type=ConnectorTaskType.PRUNE,
-                    run_immediately=True,
                 )
 
     @classmethod
@@ -142,9 +140,9 @@ class ConnectorService(CommonService):
         SyncLogsService.filter_delete([SyncLogs.connector_id == connector_id, SyncLogs.kb_id == kb_id])
         docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}", kb_id=kb_id)
         err = FileService.delete_docs([d.id for d in docs], tenant_id)
-        SyncLogsService.schedule(connector_id, kb_id, reindex=True, task_type=ConnectorTaskType.SYNC, run_immediately=True)
+        SyncLogsService.schedule(connector_id, kb_id, reindex=True, task_type=ConnectorTaskType.SYNC)
         if (conn.config or {}).get("sync_deleted_files"):
-            SyncLogsService.schedule(connector_id, kb_id, task_type=ConnectorTaskType.PRUNE, run_immediately=True)
+            SyncLogsService.schedule(connector_id, kb_id, task_type=ConnectorTaskType.PRUNE)
         return err
 
     @classmethod
@@ -346,7 +344,6 @@ class SyncLogsService(CommonService):
         reindex=False,
         total_docs_indexed=0,
         task_type=ConnectorTaskType.SYNC,
-        run_immediately=False,
     ):
         try:
             if cls.model.select().where(cls.model.kb_id == kb_id, cls.model.connector_id == connector_id).count() > 100:
@@ -372,11 +369,10 @@ class SyncLogsService(CommonService):
                 )
                 return None
             reindex = "1" if reindex else "0"
-            task_id = get_uuid()
             ConnectorService.update_by_id(connector_id, {"status": TaskStatus.SCHEDULE})
-            ret = cls.save(
+            return cls.save(
                 **{
-                    "id": task_id,
+                    "id": get_uuid(),
                     "kb_id": kb_id,
                     "status": TaskStatus.SCHEDULE,
                     "connector_id": connector_id,
@@ -387,12 +383,6 @@ class SyncLogsService(CommonService):
                     "time_started": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 }
             )
-            if run_immediately:
-                DB.execute_sql(
-                    f"UPDATE {cls.model._meta.table_name} SET update_time = %s, update_date = %s WHERE id = %s",
-                    (0, datetime(1970, 1, 1), task_id),
-                )
-            return ret
         except Exception as e:
             logging.exception(e)
             task = cls.get_latest_task(connector_id, kb_id, task_type)
@@ -500,10 +490,10 @@ class Connector2KbService(CommonService):
                 cls.filter_update([cls.model.connector_id == conn_id, cls.model.kb_id == kb_id], {"auto_parse": conn.get("auto_parse", "1")})
                 continue
             cls.save(**{"id": get_uuid(), "connector_id": conn_id, "kb_id": kb_id, "auto_parse": conn.get("auto_parse", "1")})
-            SyncLogsService.schedule(conn_id, kb_id, reindex=True, task_type=ConnectorTaskType.SYNC, run_immediately=True)
+            SyncLogsService.schedule(conn_id, kb_id, reindex=True, task_type=ConnectorTaskType.SYNC)
             e, full_conn = ConnectorService.get_by_id(conn_id)
             if e and (full_conn.config or {}).get("sync_deleted_files"):
-                SyncLogsService.schedule(conn_id, kb_id, task_type=ConnectorTaskType.PRUNE, run_immediately=True)
+                SyncLogsService.schedule(conn_id, kb_id, task_type=ConnectorTaskType.PRUNE)
 
         errs = []
         for conn_id in old_conn_ids:

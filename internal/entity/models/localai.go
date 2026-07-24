@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/common"
 	"strings"
 	"sync"
 	"time"
@@ -54,7 +53,7 @@ func (l *LocalAIModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (l *LocalAIModel) Name() string {
-	return "LocalAI"
+	return "localai"
 }
 
 var localAIReasoningFields = []string{"reasoning_content", "reasoning", "thinking"}
@@ -81,7 +80,7 @@ func addLocalAIReasoningRequestParams(reqBody map[string]interface{}, cfg *ChatC
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
-func (l *LocalAIModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (l *LocalAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -94,18 +93,42 @@ func (l *LocalAIModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, err
 	}
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), l.baseModel.URLSuffix.Chat)
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
-	if chatModelConfig != nil {
-		addLocalAIReasoningRequestParams(reqBody, chatModelConfig)
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
 	}
 
+	reqBody := map[string]interface{}{
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   false,
+	}
+
+	if chatModelConfig != nil {
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		}
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
+		}
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
+		}
+		if chatModelConfig.Stop != nil {
+			reqBody["stop"] = *chatModelConfig.Stop
+		}
+		addLocalAIReasoningRequestParams(reqBody, chatModelConfig)
+	}
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -171,7 +194,7 @@ func (l *LocalAIModel) ChatWithMessages(ctx context.Context, modelName string, m
 // ChatStreamlyWithSender sends messages and streams the response via the
 // sender function. The LocalAI SSE stream uses the same shape as OpenAI:
 // "data:" lines carrying JSON events, with a final "[DONE]" line.
-func (l *LocalAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -189,9 +212,38 @@ func (l *LocalAIModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return err
 	}
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), l.baseModel.URLSuffix.Chat)
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
+	reqBody := map[string]interface{}{
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   true,
+	}
 
 	if chatModelConfig != nil {
+		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
+			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
+		}
+
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		}
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
+		}
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
+		}
+		if chatModelConfig.Stop != nil {
+			reqBody["stop"] = *chatModelConfig.Stop
+		}
 		addLocalAIReasoningRequestParams(reqBody, chatModelConfig)
 	}
 
@@ -317,7 +369,7 @@ type localAIEmbeddingResponse struct {
 	Object string                 `json:"object"`
 }
 
-func (l *LocalAIModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (l *LocalAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -348,7 +400,7 @@ func (l *LocalAIModel) Embed(ctx context.Context, modelName *string, texts []str
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -419,7 +471,7 @@ type localAIRerankResponse struct {
 	} `json:"results"`
 }
 
-func (l *LocalAIModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (l *LocalAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -453,7 +505,7 @@ func (l *LocalAIModel) Rerank(ctx context.Context, modelName *string, query stri
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -500,7 +552,7 @@ func (l *LocalAIModel) Rerank(ctx context.Context, modelName *string, query stri
 	return rerankResponse, nil
 }
 
-func (l *LocalAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -511,7 +563,7 @@ func (l *LocalAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 	}
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), l.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -551,48 +603,48 @@ func (l *LocalAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 	return ParseListModel(modelList), nil
 }
 
-func (l *LocalAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
+func (l *LocalAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
-func (l *LocalAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	_, err := l.ListModels(ctx, apiConfig)
+func (l *LocalAIModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := l.ListModels(apiConfig)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (l *LocalAIModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+func (l *LocalAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
-func (l *LocalAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (l *LocalAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", l.Name())
 }
 
 // AudioSpeech convert text to audio
-func (l *LocalAIModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+func (l *LocalAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
-func (l *LocalAIModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (l *LocalAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", l.Name())
 }
 
-func (l *LocalAIModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (l *LocalAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
 // ParseFile parse file
-func (l *LocalAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (l *LocalAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
-func (l *LocalAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (l *LocalAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
-func (l *LocalAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (l *LocalAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
 }

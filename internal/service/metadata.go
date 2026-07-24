@@ -50,15 +50,6 @@ func NewMetadataService() *MetadataService {
 	}
 }
 
-// NewMetadataServiceForTest creates a MetadataService with injected dependencies
-// for tests that need to control the DAO and engine.
-func NewMetadataServiceForTest(kbDAO *dao.KnowledgebaseDAO, docEngine engine.DocEngine) *MetadataService {
-	return &MetadataService{
-		kbDAO:     kbDAO,
-		docEngine: docEngine,
-	}
-}
-
 // BuildMetadataIndexName constructs the metadata index name for a tenant
 func BuildMetadataIndexName(tenantID string) string {
 	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
@@ -399,7 +390,7 @@ func ExtractMetaFields(chunk map[string]interface{}) (map[string]interface{}, er
 				for k, val := range result {
 					if existing, exists := metaFields[k]; exists {
 						// Key already exists - merge values
-						metaFields[k] = MergeFieldValues(existing, val)
+						metaFields[k] = mergeFieldValues(existing, val)
 					} else {
 						metaFields[k] = val
 					}
@@ -418,7 +409,7 @@ func ExtractMetaFields(chunk map[string]interface{}) (map[string]interface{}, er
 // mergeFieldValues merges two field values when the same key appears multiple times
 // If both are arrays, append all elements. If one is array and other is string, append string to array.
 // Returns []interface{} with all merged values (flattened).
-func MergeFieldValues(existing, new interface{}) []interface{} {
+func mergeFieldValues(existing, new interface{}) []interface{} {
 	result := []interface{}{}
 
 	var addValue func(v interface{})

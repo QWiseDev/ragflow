@@ -1,5 +1,3 @@
-// https://github.com/MrLightful/shadcn-tree-view
-
 'use client';
 
 import { cn } from '@/lib/utils';
@@ -142,7 +140,7 @@ const TreeItem = React.forwardRef<HTMLDivElement, TreeItemProps>(
         <ul>
           {data.map((item) => (
             <li key={item.id}>
-              {item.children && item.children.length > 0 ? (
+              {item.children ? (
                 <TreeNode
                   item={item}
                   selectedItemId={selectedItemId}

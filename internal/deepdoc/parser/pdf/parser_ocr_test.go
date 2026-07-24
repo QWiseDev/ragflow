@@ -9,7 +9,6 @@ import (
 
 // TestOCRMergeChars_FullCoverage: embedded chars fill the detect box.
 func TestOCRMergeChars_FullCoverage(t *testing.T) {
-	p := NewParser(pdf.DefaultParserConfig())
 	mock := &MockDocAnalyzer{
 		Healthy: true,
 		OCRBoxes: []pdf.OCRBox{
@@ -26,7 +25,7 @@ func TestOCRMergeChars_FullCoverage(t *testing.T) {
 		{X0: 12, X1: 28, Top: 2, Bottom: 35, Text: "World"},
 	}
 
-	boxes := p.ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 1 {
 		t.Fatalf("expected 1 box, got %d", len(boxes))
 	}
@@ -38,7 +37,6 @@ func TestOCRMergeChars_FullCoverage(t *testing.T) {
 
 // TestOCRMergeChars_PartialCoverage: box A has chars, box B is OCR'd.
 func TestOCRMergeChars_PartialCoverage(t *testing.T) {
-	p := NewParser(pdf.DefaultParserConfig())
 	mock := &MockDocAnalyzer{
 		Healthy: true,
 		OCRBoxes: []pdf.OCRBox{
@@ -55,7 +53,7 @@ func TestOCRMergeChars_PartialCoverage(t *testing.T) {
 		{X0: 2, X1: 12, Top: 2, Bottom: 15, Text: "A"},
 	}
 
-	boxes := p.ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 2 {
 		t.Fatalf("expected 2 boxes, got %d", len(boxes))
 	}
@@ -71,7 +69,6 @@ func TestOCRMergeChars_PartialCoverage(t *testing.T) {
 
 // TestOCRMergeChars_NoDetectBoxes: OCRDetect returns nil/empty → ocrMergeChars returns nil.
 func TestOCRMergeChars_NoDetectBoxes(t *testing.T) {
-	p := NewParser(pdf.DefaultParserConfig())
 	mock := &MockDocAnalyzer{
 		Healthy:  true,
 		OCRBoxes: nil,
@@ -81,14 +78,14 @@ func TestOCRMergeChars_NoDetectBoxes(t *testing.T) {
 		{X0: 2, X1: 10, Top: 2, Bottom: 8, Text: "Hello"},
 	}
 
-	boxes := p.ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if boxes != nil {
 		t.Errorf("expected nil for no detect boxes, got %d boxes", len(boxes))
 	}
 
 	// Also test empty OCRBoxes
 	mock.OCRBoxes = []pdf.OCRBox{}
-	boxes = p.ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
+	boxes = ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if boxes != nil {
 		t.Errorf("expected nil for empty detect boxes, got %d boxes", len(boxes))
 	}
@@ -96,7 +93,6 @@ func TestOCRMergeChars_NoDetectBoxes(t *testing.T) {
 
 // TestOCRMergeChars_GarbledChars: chars are majority PUA → text cleared → OCRRecognize triggered.
 func TestOCRMergeChars_GarbledChars(t *testing.T) {
-	p := NewParser(pdf.DefaultParserConfig())
 	mock := &MockDocAnalyzer{
 		Healthy: true,
 		OCRBoxes: []pdf.OCRBox{
@@ -114,7 +110,7 @@ func TestOCRMergeChars_GarbledChars(t *testing.T) {
 		{X0: 22, X1: 28, Top: 2, Bottom: 35, Text: "a"},                   // normal
 	}
 
-	boxes := p.ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 1 {
 		t.Fatalf("expected 1 box, got %d", len(boxes))
 	}
@@ -126,7 +122,6 @@ func TestOCRMergeChars_GarbledChars(t *testing.T) {
 
 // TestOCRMergeChars_HeightGate: char height differs from box height by >70% → filtered out.
 func TestOCRMergeChars_HeightGate(t *testing.T) {
-	p := NewParser(pdf.DefaultParserConfig())
 	// Box height in PDF space: 120/3.0 = 40
 	mock := &MockDocAnalyzer{
 		Healthy: true,
@@ -143,7 +138,7 @@ func TestOCRMergeChars_HeightGate(t *testing.T) {
 		{X0: 2, X1: 10, Top: 2, Bottom: 3, Text: "tiny"},
 	}
 
-	boxes := p.ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 1 {
 		t.Fatalf("expected 1 box (OCR fallback after height gate), got %d", len(boxes))
 	}
@@ -157,7 +152,6 @@ func TestOCRMergeChars_HeightGate(t *testing.T) {
 // detection: subset-font chars clear the box text → OCR fallback.
 // Python __ocr: _is_garbled_by_font_encoding(min_chars=5).
 func TestOCRMergeChars_FontEncodingGarbled(t *testing.T) {
-	p := NewParser(pdf.DefaultParserConfig())
 	mock := &MockDocAnalyzer{
 		Healthy: true,
 		OCRBoxes: []pdf.OCRBox{
@@ -174,7 +168,7 @@ func TestOCRMergeChars_FontEncodingGarbled(t *testing.T) {
 			Text: "#", FontName: "DY1+SimSun", PageNumber: 0,
 		}
 	}
-	boxes := p.ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 1 {
 		t.Fatalf("expected 1 OCR-fallback box, got %d", len(boxes))
 	}
@@ -233,7 +227,6 @@ func TestSortCharsYFirstly(t *testing.T) {
 // fuzzy Y-sort — chars on the same line with different font sizes
 // (different Top values) are sorted by X, not by strict Top.
 func TestOCRMergeChars_MixedFontSizes(t *testing.T) {
-	p := NewParser(pdf.DefaultParserConfig())
 	// Simulate mixed font sizes on the same line.
 	// "小" has higher Top (smaller font sits higher on the baseline)
 	// but is physically to the left of "大" and "号".
@@ -253,7 +246,7 @@ func TestOCRMergeChars_MixedFontSizes(t *testing.T) {
 		{X0: 12, X1: 24, Top: 5, Bottom: 35, Text: "大"}, // larger font, lower baseline
 		{X0: 24, X1: 36, Top: 5, Bottom: 35, Text: "号"}, // same size as 大, rightmost
 	}
-	boxes := p.ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 1 {
 		t.Fatalf("expected 1 box, got %d", len(boxes))
 	}
@@ -266,7 +259,6 @@ func TestOCRMergeChars_MixedFontSizes(t *testing.T) {
 // TestOCRMergeChars_BoxOrder verifies detect boxes are sorted top-down
 // (matching Python's sort_Y_firstly) before char matching.
 func TestOCRMergeChars_BoxOrder(t *testing.T) {
-	p := NewParser(pdf.DefaultParserConfig())
 	// 3 detect boxes in reverse Y order. After sorting, output should be top-down.
 	mock := &MockDocAnalyzer{
 		Healthy: true,
@@ -285,7 +277,7 @@ func TestOCRMergeChars_BoxOrder(t *testing.T) {
 		{X0: 2, X1: 10, Top: 16, Bottom: 19, Text: "B"}, // box 2 (middle)
 		{X0: 2, X1: 10, Top: 32, Bottom: 37, Text: "C"}, // box 3 (bottom)
 	}
-	boxes := p.ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 3 {
 		t.Fatalf("expected 3 boxes, got %d", len(boxes))
 	}
@@ -302,7 +294,6 @@ func TestOCRMergeChars_BoxOrder(t *testing.T) {
 // The old box-perspective collectOverlapChars would duplicate the char;
 // the new char-perspective code (matching Python's find_overlapped) does not.
 func TestOCRMergeChars_OverlappingBoxes(t *testing.T) {
-	p := NewParser(pdf.DefaultParserConfig())
 	// Box A: PDF x=0..20, y=0..20. Box B: PDF x=10..30, y=0..20.
 	// Overlap zone: x=10..20.
 	// Char "Y" at PDF x=2..8 → Box A only.
@@ -323,7 +314,7 @@ func TestOCRMergeChars_OverlappingBoxes(t *testing.T) {
 		{X0: 12, X1: 18, Top: 2, Bottom: 12, Text: "乙"}, // overlap zone
 		{X0: 22, X1: 28, Top: 2, Bottom: 12, Text: "丙"}, // Box B only
 	}
-	boxes := p.ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 2 {
 		t.Fatalf("expected 2 boxes, got %d", len(boxes))
 	}

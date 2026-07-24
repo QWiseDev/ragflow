@@ -15,7 +15,7 @@
 #
 import pytest
 from ragflow_sdk import RAGFlow
-from configs import INVALID_API_TOKEN, HOST_ADDRESS, SDK_UNAUTHORIZED_ERROR_MESSAGE
+from configs import INVALID_API_TOKEN, HOST_ADDRESS
 
 
 class TestAuthorization:
@@ -23,8 +23,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
-            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
-            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
+            (None, "<Unauthorized '401: Unauthorized'>"),
+            (INVALID_API_TOKEN, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_auth_invalid(self, invalid_auth, expected_message):

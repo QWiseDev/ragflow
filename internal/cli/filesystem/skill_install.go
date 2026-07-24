@@ -24,7 +24,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"ragflow/internal/common"
 	"strings"
 	"time"
 
@@ -80,10 +79,10 @@ func (a *sourceHTTPClientAdapter) Get(url string) (*http.Response, error) {
 // NewInstallSkillCommand creates a new install-skill command handler
 func NewInstallSkillCommand(client HTTPClientInterface, fileProvider *FileProvider, skillProvider Provider) *SkillInstallCommand {
 	// Log proxy settings
-	if httpProxy := common.GetEnv(common.EnvHttpHTTPProxy); httpProxy != "" {
+	if httpProxy := os.Getenv("http_proxy"); httpProxy != "" {
 		fmt.Printf("Using HTTP proxy: %s\n", httpProxy)
 	}
-	if httpsProxy := common.GetEnv(common.EnvHttpHTTPSProxy); httpsProxy != "" {
+	if httpsProxy := os.Getenv("https_proxy"); httpsProxy != "" {
 		fmt.Printf("Using HTTPS proxy: %s\n", httpsProxy)
 	}
 

@@ -22,7 +22,6 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
   height = '400px',
   className = '',
   options = {},
-  defaultExpanded = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<any>(null);
@@ -67,10 +66,6 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
 
             if (value) {
               editorRef.current.set(value);
-
-              if (defaultExpanded) {
-                editorRef.current.expandAll?.();
-              }
             }
 
             setIsLoading(false);
@@ -143,10 +138,6 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
 
           editorRef.current = new JSONEditor(containerRef.current, newOptions);
           editorRef.current.set(currentData);
-
-          if (defaultExpanded) {
-            editorRef.current.expandAll?.();
-          }
         } catch (error) {
           console.error(
             'Failed to reload jsoneditor with new language:',
@@ -157,7 +148,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
 
       initEditorWithNewLanguage();
     }
-  }, [i18n.language, value, onChange, options, defaultExpanded]);
+  }, [i18n.language, value, onChange, options]);
 
   useEffect(() => {
     if (editorRef.current && value !== undefined) {
@@ -166,22 +157,14 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
         const currentJson = editorRef.current.get();
         if (JSON.stringify(currentJson) !== JSON.stringify(value)) {
           editorRef.current.set(value);
-
-          if (defaultExpanded) {
-            editorRef.current.expandAll?.();
-          }
         }
       } catch (err) {
         console.error(err);
         // Skip update if there is a syntax error in the current editor
         editorRef.current.set(value);
-
-        if (defaultExpanded) {
-          editorRef.current.expandAll?.();
-        }
       }
     }
-  }, [value, defaultExpanded]);
+  }, [value]);
 
   return (
     <div

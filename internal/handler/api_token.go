@@ -50,10 +50,9 @@ func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 	}
 
 	tenantID := tenants[0].TenantID
-	ctx := c.Request.Context()
 
 	// Get keys for the tenant
-	keys, err := h.systemService.ListAPIKeys(ctx, tenantID)
+	keys, err := h.systemService.ListAPIKeys(tenantID)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to list keys")
 		return
@@ -93,10 +92,8 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
-
 	// Create key
-	key, err := h.systemService.CreateAPIKey(ctx, tenantID, &req)
+	key, err := h.systemService.CreateAPIKey(tenantID, &req)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to create key")
 		return
@@ -136,10 +133,8 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
-
 	// Delete key
-	if err = h.systemService.DeleteAPIKey(ctx, tenantID, key); err != nil {
+	if err = h.systemService.DeleteAPIKey(tenantID, key); err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to delete key")
 		return
 	}

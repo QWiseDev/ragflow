@@ -2,17 +2,11 @@ import message from '@/components/ui/message';
 import { PaginationProps } from '@/interfaces/antd-compat';
 import {
   IFetchFileListResult,
-  IFile,
   IFolder,
 } from '@/interfaces/database/file-manager';
-import {
-  ConnectFileToKnowledgeMode,
-  IConnectRequestBody,
-} from '@/interfaces/request/file-manager';
+import { IConnectRequestBody } from '@/interfaces/request/file-manager';
 import fileManagerService from '@/services/file-manager-service';
-import api from '@/utils/api';
 import { downloadFileFromBlob } from '@/utils/file-util';
-import request from '@/utils/request';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback } from 'react';
@@ -300,49 +294,12 @@ export const useConnectToKnowledge = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: [FileApiAction.ConnectFileToKnowledge],
-    mutationFn: async (
-      params: IConnectRequestBody & {
-        mode: ConnectFileToKnowledgeMode;
-        kbsInfo: IFile['kbs_info'];
-      },
-    ) => {
-      const { data } = await request.post(api.connectFileToKnowledge, {
-        data: { fileIds: params.fileIds, kbIds: params.kbIds },
-        params: { mode: params.mode },
-      });
+    mutationFn: async (params: IConnectRequestBody) => {
+      const { data } = await fileManagerService.connectFileToKnowledge(params);
       if (data.code === 0) {
         message.success(t('message.operated'));
-        const fileIdSet = new Set(params.fileIds);
-        queryClient.setQueriesData<IFetchFileListResult>(
-          {
-            queryKey: [FileApiAction.FetchFileList],
-          },
-          (oldData) => {
-            if (!oldData?.files) return oldData;
-            return {
-              ...oldData,
-              files: oldData.files.map((file) => {
-                if (!fileIdSet.has(file.id)) return file;
-                const kbsInfo =
-                  params.mode === 'replace'
-                    ? params.kbsInfo
-                    : [
-                        ...(file.kbs_info ?? []),
-                        ...params.kbsInfo.filter(
-                          (kb) =>
-                            !(file.kbs_info ?? []).some(
-                              (item) => item.kb_id === kb.kb_id,
-                            ),
-                        ),
-                      ];
-                return { ...file, kbs_info: kbsInfo };
-              }),
-            };
-          },
-        );
         queryClient.invalidateQueries({
           queryKey: [FileApiAction.FetchFileList],
-          refetchType: 'none',
         });
       }
       return data.code;

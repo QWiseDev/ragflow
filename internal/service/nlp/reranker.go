@@ -15,7 +15,6 @@
 package nlp
 
 import (
-	"context"
 	"encoding/json"
 	"math"
 	"regexp"
@@ -54,7 +53,6 @@ type SearchResult struct {
 //   - tsim: token similarity scores
 //   - vsim: vector similarity scores
 func Rerank(
-	ctx context.Context,
 	rerankModel *models.RerankModel,
 	chunks []map[string]interface{},
 	total int,
@@ -69,7 +67,7 @@ func Rerank(
 ) (sim []float64, tsim []float64, vsim []float64) {
 	// If reranker model is provided and there are results, use model reranking
 	if rerankModel != nil && total > 0 {
-		return RerankByModel(ctx, rerankModel, chunks, nil, nil, query, tkWeight, vtWeight, cfield, qb, rankFeature)
+		return RerankByModel(rerankModel, chunks, nil, nil, query, tkWeight, vtWeight, cfield, qb, rankFeature)
 	}
 
 	// Otherwise, use fallback logic based on engine type
@@ -89,7 +87,6 @@ func Rerank(
 
 // RerankByModel performs reranking using a reranker model
 func RerankByModel(
-	ctx context.Context,
 	rerankModel *models.RerankModel,
 	chunks []map[string]interface{},
 	ids []string,
@@ -151,7 +148,7 @@ func RerankByModel(
 	tsim = TokenSimilarity(keywords, insTw, qb)
 
 	// Get similarity scores from reranker model
-	rerankResponse, err := rerankModel.ModelDriver.Rerank(ctx, rerankModel.ModelName, query, docs, rerankModel.APIConfig, &models.RerankConfig{}, nil)
+	rerankResponse, err := rerankModel.ModelDriver.Rerank(rerankModel.ModelName, query, docs, rerankModel.APIConfig, &models.RerankConfig{})
 	if err != nil {
 		common.Error("RerankByModel: rerankModel.Rerank failed; falling back to token-only similarity", err)
 		// If model fails, fall back to token similarity only
@@ -704,13 +701,14 @@ func applyRankFeatureScores(chunks []map[string]interface{}, sim []float64, rank
 	// Compute tag score for each chunk
 	tagScores := make([]float64, len(chunks))
 	for i, chunk := range chunks {
-		// tag_feas may be a JSON string (legacy) or an object as stored by the
-		// "rank_features" ES mapping; normalize to map[string]float64 either way.
-		tagFeaMap := extractTagFeasMap(chunk[common.TAG_FLD])
-		if len(tagFeaMap) == 0 {
+		tagFeaStr, ok := chunk[common.TAG_FLD].(string)
+		if !ok || tagFeaStr == "" {
 			tagScores[i] = 0
 			continue
 		}
+
+		// Parse tag_feas JSON string: {"tag1": 0.5, "tag2": 0.3}
+		tagFeaMap := parseTagFeasRerank(tagFeaStr)
 		// Sort keys for deterministic float accumulation
 		tagFeaKeys := make([]string, 0, len(tagFeaMap))
 		for k := range tagFeaMap {
@@ -818,13 +816,14 @@ func applyRankFeatureScoresForIDs(ids []string, field map[string]map[string]inte
 			tagScores[i] = 0
 			continue
 		}
-		// tag_feas may be a JSON string (legacy) or an object as stored by the
-		// "rank_features" ES mapping; normalize to map[string]float64 either way.
-		tagFeaMap := extractTagFeasMap(chunk[common.TAG_FLD])
-		if len(tagFeaMap) == 0 {
+		tagFeaStr, ok := chunk[common.TAG_FLD].(string)
+		if !ok || tagFeaStr == "" {
 			tagScores[i] = 0
 			continue
 		}
+
+		// Parse tag_feas JSON string: {"tag1": 0.5, "tag2": 0.3}
+		tagFeaMap := parseTagFeasRerank(tagFeaStr)
 		// Sort keys for deterministic float accumulation
 		tagFeaKeys := make([]string, 0, len(tagFeaMap))
 		for k := range tagFeaMap {
@@ -1048,38 +1047,4 @@ func parseTagFeasRerank(tagFeasStr string) map[string]float64 {
 		}
 	}
 	return result
-}
-
-// extractTagFeasMap normalizes a tag_feas value into map[string]float64.
-// Depending on the search backend, tag_feas is stored either as an object of
-// numeric values (e.g. the ES "rank_features" type) or as a JSON string (e.g.
-// Infinity's varchar rankfeatures column), so both forms are accepted.
-func extractTagFeasMap(v interface{}) map[string]float64 {
-	switch t := v.(type) {
-	case string:
-		return parseTagFeasRerank(t)
-	case map[string]interface{}:
-		out := make(map[string]float64, len(t))
-		for k, val := range t {
-			if f, ok := toFloat64(val); ok {
-				out[k] = f
-			}
-		}
-		return out
-	case map[string]float64:
-		return t
-	case map[string]int:
-		out := make(map[string]float64, len(t))
-		for k, val := range t {
-			out[k] = float64(val)
-		}
-		return out
-	case nil:
-		return nil
-	default:
-		if b, err := json.Marshal(t); err == nil {
-			return parseTagFeasRerank(string(b))
-		}
-		return nil
-	}
 }

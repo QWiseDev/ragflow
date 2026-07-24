@@ -78,44 +78,42 @@ export const useMessageAction = () => {
         memory_id: memoryId,
         message_id: selectedMessage.message_id,
       })
-      .then((data: any) => {
-        if (data.data.code === 0) {
-          message.success(t('message.deleted'));
-          queryClient.invalidateQueries({
-            queryKey: [MemoryApiAction.FetchMemoryMessage],
-          });
-        }
+      .then(() => {
+        message.success(t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: [MemoryApiAction.FetchMemoryMessage],
+        });
       });
     setShowDeleteDialog(false);
-  }, [selectedMessage.message_id, queryClient, memoryId]);
+  }, [selectedMessage.message_id, queryClient]);
 
   const handleUpdateMessageState = useCallback(
-    async (messageInfo: IMessageInfo, enable: boolean): Promise<boolean> => {
-      try {
-        const { data } = await memoryService.updateMessageState({
+    (messageInfo: IMessageInfo, enable: boolean) => {
+      // delete message
+      const selectedMessageInfo = messageInfo || selectedMessage;
+      memoryService
+        .updateMessageState({
           memory_id: memoryId,
-          message_id: messageInfo.message_id,
+          message_id: selectedMessageInfo.message_id,
           status: enable || false,
+        })
+        .then((data: any) => {
+          if (data.data.code === 0) {
+            message.success(t('message.updated'));
+            queryClient.invalidateQueries({
+              queryKey: [MemoryApiAction.FetchMemoryMessage],
+            });
+          }
         });
-        if (data.code === 0) {
-          message.success(t('message.updated'));
-          queryClient.invalidateQueries({
-            queryKey: [MemoryApiAction.FetchMemoryMessage],
-          });
-          return true;
-        }
-        return false;
-      } catch {
-        return false;
-      }
+      setShowDeleteDialog(false);
     },
-    [queryClient, memoryId],
+    [selectedMessage, queryClient, memoryId],
   );
 
   const handleClickUpdateMessageState = useCallback(
-    (messageInfo: IMessageInfo, enable: boolean): Promise<boolean> => {
-      setSelectedMessage(messageInfo);
-      return handleUpdateMessageState(messageInfo, enable);
+    (message: IMessageInfo, enable: boolean) => {
+      setSelectedMessage(message);
+      handleUpdateMessageState(message, enable);
     },
     [handleUpdateMessageState],
   );

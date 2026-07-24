@@ -228,7 +228,7 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 		ModelName:  "gpt-4o",
 		ProviderID: providerID,
 		InstanceID: "instance-dummy",
-		ModelType:  int(entity.ModelTypeChat),
+		ModelType:  "chat",
 		Status:     "active",
 	}).Error
 	if err != nil {
@@ -250,11 +250,8 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 		t.Fatalf("failed to retrieve tenant: %v", err)
 	}
 
-	expectedDefaultModel := "gpt-4o@dummy@OpenAI"
+	expectedDefaultModel := "gpt-4o@default@OpenAI"
 	if tenant.LLMID != expectedDefaultModel {
 		t.Errorf("expected tenant default LLM to be %q, got %q", expectedDefaultModel, tenant.LLMID)
-	}
-	if tenant.TenantLLMID == nil || *tenant.TenantLLMID != modelID {
-		t.Errorf("expected tenant_llm_id to be %q, got %v", modelID, tenant.TenantLLMID)
 	}
 }

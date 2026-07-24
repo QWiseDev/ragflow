@@ -22,12 +22,9 @@ func TestGetParser_RoutesOfficeFamilies(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			p, err := GetParser(tc.fileType)
+			p, err := GetParser(tc.fileType, map[string]string{"lib_type": OfficeOxide})
 			if err != nil {
 				t.Fatalf("GetParser(%q): %v", tc.fileType, err)
-			}
-			if p == nil {
-				t.Fatalf("GetParser(%q) returned nil", tc.fileType)
 			}
 			if _, ok := p.(ParseResultProducer); !ok {
 				t.Fatalf("GetParser(%q) returned %T, want ParseResultProducer", tc.fileType, p)

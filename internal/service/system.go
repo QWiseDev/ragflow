@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
@@ -30,6 +31,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/server"
 	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 )
 
 // SystemService system service
@@ -66,7 +68,6 @@ func (s *SystemService) GetConfig() (*ConfigResponse, error) {
 // VersionResponse version response
 type VersionResponse struct {
 	Version string `json:"version"`
-	Type    string `json:"type"`
 }
 
 type HealthzMeta struct {
@@ -75,22 +76,19 @@ type HealthzMeta struct {
 }
 
 type HealthzResponse struct {
-	DB           string                 `json:"db"`
-	Redis        string                 `json:"redis"`
-	DocEngine    string                 `json:"doc_engine"`
-	Storage      string                 `json:"storage"`
-	MessageQueue string                 `json:"message_queue"`
-	Status       string                 `json:"status"`
-	Meta         map[string]HealthzMeta `json:"_meta,omitempty"`
+	DB        string                 `json:"db"`
+	Redis     string                 `json:"redis"`
+	DocEngine string                 `json:"doc_engine"`
+	Storage   string                 `json:"storage"`
+	Status    string                 `json:"status"`
+	Meta      map[string]HealthzMeta `json:"_meta,omitempty"`
 }
 
 // GetVersion get RAGFlow version
 func (s *SystemService) GetVersion() (*VersionResponse, error) {
-	version := common.GetRAGFlowVersion()
-	versionType := common.GetRAGFlowType()
+	version := utility.GetRAGFlowVersion()
 	return &VersionResponse{
 		Version: version,
-		Type:    versionType,
 	}, nil
 }
 
@@ -315,7 +313,8 @@ func timedHealthCheck(check func() error) (bool, HealthzMeta) {
 	return true, meta
 }
 
-func GetComponentsHealthz(ctx context.Context) (*HealthzResponse, bool) {
+// Healthz runs lightweight dependency checks for /api/v1/system/healthz.
+func (s *SystemService) Healthz(ctx context.Context) (*HealthzResponse, bool) {
 	meta := map[string]HealthzMeta{}
 
 	dbOK, dbMeta := timedHealthCheck(func() error {
@@ -365,42 +364,18 @@ func GetComponentsHealthz(ctx context.Context) (*HealthzResponse, bool) {
 		meta["storage"] = storageMeta
 	}
 
-	messageQueueOK, messageQueueMeta := timedHealthCheck(func() error {
-
-		msgQueueEngine := engine.GetMessageQueueEngine()
-		if msgQueueEngine == nil {
-			return fmt.Errorf("message queue is not initialized")
-		}
-
-		status := msgQueueEngine.CheckStatus()
-
-		if msgQueueEngine == nil || status != "CONNECTED" {
-			return fmt.Errorf("message queue is not healthy")
-		}
-		return nil
-	})
-	if !messageQueueOK {
-		meta["message_queue"] = messageQueueMeta
-	}
-
-	allOK := dbOK && redisOK && docOK && storageOK && messageQueueOK
+	allOK := dbOK && redisOK && docOK && storageOK
 	result := &HealthzResponse{
-		DB:           okNok(dbOK),
-		Redis:        okNok(redisOK),
-		DocEngine:    okNok(docOK),
-		Storage:      okNok(storageOK),
-		MessageQueue: okNok(messageQueueOK),
-		Status:       okNok(allOK),
+		DB:        okNok(dbOK),
+		Redis:     okNok(redisOK),
+		DocEngine: okNok(docOK),
+		Storage:   okNok(storageOK),
+		Status:    okNok(allOK),
 	}
 	if len(meta) > 0 {
 		result.Meta = meta
 	}
 	return result, allOK
-}
-
-// Healthz runs lightweight dependency checks for /api/v1/system/healthz.
-func (s *SystemService) Healthz(ctx context.Context) (*HealthzResponse, bool) {
-	return GetComponentsHealthz(ctx)
 }
 
 // ListAllVariables list all variables
@@ -481,7 +456,7 @@ func (s *SystemService) ListEnvironments() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 
 	// DOC_ENGINE
-	docEngine := common.GetEnv(common.EnvDocEngine)
+	docEngine := os.Getenv("DOC_ENGINE")
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}
@@ -491,7 +466,7 @@ func (s *SystemService) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// DEFAULT_SUPERUSER_EMAIL
-	defaultSuperuserEmail := common.GetEnvSmall(common.EnvDefaultSuperuserEmail)
+	defaultSuperuserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
 	if defaultSuperuserEmail == "" {
 		defaultSuperuserEmail = "admin@ragflow.io"
 	}
@@ -501,7 +476,7 @@ func (s *SystemService) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// DB_TYPE
-	dbType := common.GetEnvSmall(common.EnvDBType)
+	dbType := os.Getenv("DB_TYPE")
 	if dbType == "" {
 		dbType = "mysql"
 	}
@@ -511,7 +486,7 @@ func (s *SystemService) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// DEVICE
-	device := common.GetEnvSmall(common.EnvDevice)
+	device := os.Getenv("DEVICE")
 	if device == "" {
 		device = "cpu"
 	}
@@ -521,7 +496,7 @@ func (s *SystemService) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// STORAGE_IMPL
-	storageImpl := common.GetEnvSmall(common.EnvStorageImpl)
+	storageImpl := os.Getenv("STORAGE_IMPL")
 	if storageImpl == "" {
 		storageImpl = "MINIO"
 	}

@@ -1,35 +1,34 @@
 package parser
 
 import (
-	"context"
 	"fmt"
-	"ragflow/internal/common"
+	"os"
 	"strings"
 
 	models "ragflow/internal/entity/models"
 )
 
-func parsePDFWithPaddleOCR(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
+func parsePDFWithPaddleOCR(filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
 	baseURL := strings.TrimSpace(parser.PaddleOCRBaseURL)
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRBaseUrl))
+		baseURL = strings.TrimSpace(os.Getenv("PADDLEOCR_BASE_URL"))
 	}
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRApiURL))
+		baseURL = strings.TrimSpace(os.Getenv("PADDLEOCR_API_URL"))
 	}
 	if baseURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR requires paddleocr_base_url or PADDLEOCR_BASE_URL")}
 	}
 	apiKey := parser.PaddleOCRAPIKey
 	if strings.TrimSpace(apiKey) == "" {
-		apiKey = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAccessToken))
+		apiKey = strings.TrimSpace(os.Getenv("PADDLEOCR_ACCESS_TOKEN"))
 	}
 	algorithm := strings.TrimSpace(parser.PaddleOCRAlgorithm)
 	if algorithm == "" {
-		algorithm = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAlgorithm))
+		algorithm = strings.TrimSpace(os.Getenv("PADDLEOCR_ALGORITHM"))
 	}
 	if algorithm == "" {
 		algorithm = "PaddleOCR-VL"
@@ -46,9 +45,9 @@ func parsePDFWithPaddleOCR(ctx context.Context, filename string, data []byte, pa
 		apiConfig.ApiKey = &apiKey
 	}
 
-	resp, err := driver.OCRFile(ctx, &algorithm, data, &filename, apiConfig, &models.OCRConfig{
+	resp, err := driver.OCRFile(&algorithm, data, &filename, apiConfig, &models.OCRConfig{
 		Algorithm: algorithm,
-	}, nil)
+	})
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)}
 	}
@@ -59,5 +58,5 @@ func parsePDFWithPaddleOCR(ctx context.Context, filename string, data []byte, pa
 	if resp.Text != nil && strings.TrimSpace(*resp.Text) == "" {
 		pageCount = 0
 	}
-	return parseMinerUMarkdownResult(ctx, filename, *resp.Text, parser.OutputFormat, pageCount)
+	return parseMinerUMarkdownResult(filename, *resp.Text, parser.OutputFormat, pageCount)
 }

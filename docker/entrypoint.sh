@@ -255,7 +255,14 @@ ensure_docling
 ensure_db_init
 
 if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
-    tools/scripts/run_migrations.sh
+    echo "Running model provider table migrations..."
+    "$PY" tools/scripts/mysql_migration.py \
+        --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config \
+        --config conf/service_conf.yaml \
+        --execute \
+        --database-version "v0.26.1" \
+        --mark-database-version-on-success
+    echo "Model provider table migrations completed."
 fi
 
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then

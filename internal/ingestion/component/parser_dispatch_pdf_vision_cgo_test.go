@@ -35,7 +35,7 @@ func TestDispatch_PDFVisionJSON_RealPDFFixture(t *testing.T) {
 	}
 
 	var callCount atomic.Int32
-	pdfVisionChatInvoker = func(ctx context.Context, _ modelModule.ModelDriver, modelName string, messages []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+	pdfVisionChatInvoker = func(_ modelModule.ModelDriver, modelName string, messages []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
 		if modelName != "fixture-vlm" {
 			t.Fatalf("modelName = %q, want fixture-vlm", modelName)
 		}
@@ -60,10 +60,9 @@ func TestDispatch_PDFVisionJSON_RealPDFFixture(t *testing.T) {
 	}
 
 	param := schema.ParserParam{}.Defaults()
-	setups := defaultSetups()
-	setups["pdf"]["parse_method"] = "CustomVLM"
-	setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Param: param, Setups: setups}
+	param.Setups["pdf"]["parse_method"] = "CustomVLM"
+	param.Setups["pdf"]["output_format"] = "json"
+	c := &ParserComponent{Param: param}
 
 	out, err := c.Invoke(context.Background(), map[string]any{
 		"binary":    data,

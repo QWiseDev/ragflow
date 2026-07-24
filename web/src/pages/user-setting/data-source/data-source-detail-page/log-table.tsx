@@ -68,11 +68,7 @@ const TaskCountdown = ({ row, now }: { row: IDataSourceLog; now: number }) => {
     return '';
   }
 
-  return (
-    <span className="tabular-nums">
-      Task starts in {formatDuration(remainingSeconds)}
-    </span>
-  );
+  return <span>Task starts in {formatDuration(remainingSeconds)}</span>;
 };
 
 const getSummary = (row: IDataSourceLog, now: number) => {

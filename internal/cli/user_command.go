@@ -18,7 +18,6 @@ package cli
 
 import (
 	"bufio"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -3549,7 +3548,10 @@ func (c *CLI) APIParseLocalFileCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	fileType := utility.GetFileType(filename)
-	fileParser, err := parser.GetParser(fileType)
+	config := map[string]string{
+		"lib_type": "office_oxide",
+	}
+	fileParser, err := parser.GetParser(fileType, config)
 	if err != nil {
 		return nil, err
 	}
@@ -3559,8 +3561,7 @@ func (c *CLI) APIParseLocalFileCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to read dsl file: %w", err)
 	}
 
-	ctx := context.Background()
-	parseResult := fileParser.ParseWithResult(ctx, filename, fileContent)
+	parseResult := fileParser.ParseWithResult(filename, fileContent)
 	if parseResult.Err != nil {
 		return nil, formatRequestError("parse local file", parseResult.Err)
 	}

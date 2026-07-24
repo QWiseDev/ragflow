@@ -18,17 +18,29 @@ package parser
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"strings"
 
 	"golang.org/x/net/html"
 )
 
-type HTMLParser struct{}
+const (
+	Official string = "official"
+)
 
-func NewHTMLParser() *HTMLParser {
-	return &HTMLParser{}
+type HTMLParser struct {
+	libType string
+}
+
+func NewHTMLParser(libType string) (*HTMLParser, error) {
+	switch libType {
+	case Official:
+		return &HTMLParser{
+			libType: Official,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported HTML library type: %s", libType)
+	}
 }
 
 func (p *HTMLParser) String() string {
@@ -48,7 +60,10 @@ func (p *HTMLParser) String() string {
 // (bold / links / images) is intentionally NOT surfaced as a
 // separate ck_type — the python HtmlParser collapses inline
 // formatting into the parent block's text.
-func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+func (p *HTMLParser) ParseWithResult(filename string, data []byte) ParseResult {
+	if p.libType != Official {
+		return ParseResult{Err: fmt.Errorf("unsupported HTML library type: %s", p.libType)}
+	}
 	doc, err := html.Parse(bytes.NewReader(data))
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("html parse: %w", err)}

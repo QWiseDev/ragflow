@@ -5,7 +5,6 @@ package pdf
 import (
 	"os"
 	"path/filepath"
-	"ragflow/internal/common"
 	"testing"
 
 	inf "ragflow/internal/deepdoc/parser/pdf/inference"
@@ -15,7 +14,7 @@ import (
 // mustConnectInferenceClient returns a InferenceClient for the OSS DeepDoc service.
 func mustConnectInferenceClient(t *testing.T) *inf.Client {
 	t.Helper()
-	url := common.GetEnv(common.EnvOSSDeepDocURL)
+	url := os.Getenv("OSSDEEPDOC_URL")
 	if url == "" {
 		url = "http://localhost:9390"
 	}

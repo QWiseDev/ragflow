@@ -20,7 +20,7 @@ export interface IChunkListResult {
   searchString?: string;
   handleInputChange?: React.ChangeEventHandler<HTMLInputElement>;
   pagination: PaginationProps;
-  setPagination?: (pagination: { page: number; pageSize?: number }) => void;
+  setPagination?: (pagination: { page: number; pageSize: number }) => void;
   available: number | undefined;
   handleSetAvailable: (available: number | undefined) => void;
   dataUpdatedAt?: number; // Timestamp when data was last updated - useful for cache busting
@@ -122,14 +122,12 @@ export const useFetchChunk = (
 
 export const useFetchNextChunkList = (
   enabled = true,
-  options?: { chunkIds?: string[] },
 ): ResponseGetType<{
   data: IChunk[];
   total: number;
   documentInfo: IKnowledgeFile;
 }> &
   IChunkListResult => {
-  const chunkIds = options?.chunkIds;
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { documentId, knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
@@ -149,7 +147,6 @@ export const useFetchNextChunkList = (
       pagination.pageSize,
       debouncedSearchString,
       available,
-      chunkIds,
     ],
     placeholderData: (previousData: any) =>
       previousData ?? { data: [], total: 0, documentInfo: {} }, // https://github.com/TanStack/query/issues/8183
@@ -159,13 +156,10 @@ export const useFetchNextChunkList = (
       const { data } = await kbService.chunkList({
         kb_id: knowledgeId,
         doc_id: documentId,
-        page: chunkIds?.length ? 1 : pagination.current,
-        size: chunkIds?.length
-          ? Math.max(chunkIds.length, 100)
-          : pagination.pageSize,
+        page: pagination.current,
+        size: pagination.pageSize,
         available_int: available,
         keywords: searchString,
-        chunk_ids: chunkIds,
       });
       if (data.code === 0) {
         const res = data.data;

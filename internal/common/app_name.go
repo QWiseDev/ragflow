@@ -102,7 +102,7 @@ func ValidateName(name string) error {
 	// Validate name is not empty after trimming
 	trimmedName := strings.TrimSpace(name)
 	if trimmedName == "" {
-		return fmt.Errorf("name cannot be empty or whitespace")
+		return fmt.Errorf("name can't be empty")
 	}
 
 	// Validate name length in bytes (not characters) - same as Python len(search_name.encode("utf-8"))

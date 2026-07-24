@@ -40,20 +40,9 @@ export const buildMessageItemReference = (
   const referenceIndex = assistantMessages.findIndex(
     (x) => x.id === message.id,
   );
-  // An assistant message that has not received any content yet is still
-  // being generated. Never resolve its reference from the conversation
-  // reference list — the indices only align with completed answers, so the
-  // lookup would surface a stale reference from a previous turn (or from a
-  // previously opened conversation) while the answer is streaming.
-  const isPendingAnswer =
-    message.role === MessageType.Assistant &&
-    !message.content &&
-    isEmpty(message?.reference);
   const reference = !isEmpty(message?.reference)
     ? message?.reference
-    : isPendingAnswer
-      ? undefined
-      : (conversation?.reference ?? [])[referenceIndex];
+    : (conversation?.reference ?? [])[referenceIndex];
 
   return reference ?? { doc_aggs: [], chunks: [], total: 0 };
 };

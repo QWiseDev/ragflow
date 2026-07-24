@@ -20,7 +20,6 @@ export interface FormatPreserveEditorProps {
   textMode?: ChunkTextMode;
   clickChunk: (chunk: IChunk) => void;
   isReadonly: boolean;
-  newChunkIndex?: number;
 }
 
 export type IJsonContainerProps = {
@@ -48,7 +47,6 @@ export type IJsonContainerProps = {
   textMode?: ChunkTextMode;
   clickChunk: (chunk: IChunk) => void;
   isReadonly: boolean;
-  newChunkIndex?: number;
 };
 
 export type IObjContainerProps = {

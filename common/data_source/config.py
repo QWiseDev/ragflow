@@ -114,10 +114,7 @@ _PAGE_EXPANSION_FIELDS = [
 
 
 # Configuration constants
-try:
-    BLOB_STORAGE_SIZE_THRESHOLD = int(os.environ.get("BLOB_STORAGE_SIZE_THRESHOLD", 20 * 1024 * 1024))
-except ValueError as error:
-    raise ValueError("BLOB_STORAGE_SIZE_THRESHOLD must be an integer number of bytes") from error
+BLOB_STORAGE_SIZE_THRESHOLD = 20 * 1024 * 1024  # 20MB
 INDEX_BATCH_SIZE = 2
 SLACK_NUM_THREADS = 4
 ENABLE_EXPENSIVE_EXPERT_CALLS = False

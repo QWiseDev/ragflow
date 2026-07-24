@@ -17,7 +17,6 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -28,7 +27,7 @@ import (
 )
 
 // GenerateRelatedQuestions generates related search questions for chat/searchbot endpoints.
-func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, modelProviderSvc *ModelProviderService) ([]string, error) {
+func GenerateRelatedQuestions(tenantID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, modelProviderSvc *ModelProviderService) ([]string, error) {
 	if modelProviderSvc == nil {
 		return nil, fmt.Errorf("model provider service not configured")
 	}
@@ -42,7 +41,7 @@ func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID 
 		{Role: "system", Content: prompt},
 		{Role: "user", Content: "\nKeywords: " + question + "\nRelated search terms:\n    "},
 	}
-	response, err := modelProviderSvc.Chat(ctx, tenantID, modelID, messages, relatedQuestionsConfig(searchConfig))
+	response, err := modelProviderSvc.Chat(tenantID, modelID, messages, relatedQuestionsConfig(searchConfig))
 	if err != nil {
 		return nil, err
 	}

@@ -371,7 +371,6 @@ const GoogleDriveTokenField = ({
         onValueChange={handleValueChange}
         accept={{ '*.json': [FileMimeType.Json] }}
         maxFileCount={1}
-        showFolderTab={false}
         description="Upload your Google OAuth JSON file."
       />
 

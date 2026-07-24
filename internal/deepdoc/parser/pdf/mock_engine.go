@@ -8,11 +8,10 @@ import (
 
 // MockEngine is a minimal pdf.PDFEngine stub for unit/integration tests.
 type MockEngine struct {
-	Chars               map[int][]pdf.TextChar
-	NumPages            int
-	RenderW             int
-	RenderH             int
-	RenderPageImageFunc func(pg int, dpi float64) (image.Image, error)
+	Chars    map[int][]pdf.TextChar
+	NumPages int
+	RenderW  int
+	RenderH  int
 }
 
 func (m *MockEngine) ExtractChars(pg int) ([]pdf.TextChar, error) {
@@ -22,9 +21,6 @@ func (m *MockEngine) RenderPage(pg int, dpi float64) ([]byte, error) {
 	return nil, ErrNoPDFData
 }
 func (m *MockEngine) RenderPageImage(pg int, dpi float64) (image.Image, error) {
-	if m.RenderPageImageFunc != nil {
-		return m.RenderPageImageFunc(pg, dpi)
-	}
 	w, h := m.RenderW, m.RenderH
 	if w <= 0 {
 		w = 100

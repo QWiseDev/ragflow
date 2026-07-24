@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"ragflow/internal/common"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/tool"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -32,7 +31,7 @@ func TestPipelineParity(t *testing.T) {
 		t.Skipf("charspy/ not found: %v", err)
 	}
 
-	filter := common.GetEnv(common.EnvBatchParityFilter)
+	filter := os.Getenv("BATCH_PARITY_FILTER")
 
 	total, passed := 0, 0
 	for _, e := range entries {
@@ -262,7 +261,7 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 	// Verify production lyt.NaiveVerticalMerge matches vWithWS (Python behavior).
 	mhMap := map[int]float64{1: mh}
 	mwMap := map[int]float64{1: 5}
-	vmResult := lyt.NaiveVerticalMerge(boxes, mhMap, mwMap, nil)
+	vmResult := lyt.NaiveVerticalMerge(boxes, mhMap, mwMap, false)
 	t.Logf("lyt.NaiveVerticalMerge (production): %d sections", len(vmResult))
 	if len(vmResult) != nWS {
 		t.Errorf("lyt.NaiveVerticalMerge produced %d sections, want %d (Python-like with gap bridge)", len(vmResult), nWS)

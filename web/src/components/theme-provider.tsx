@@ -1,12 +1,5 @@
 import { ThemeEnum } from '@/constants/common';
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 
 type ThemeProviderProps = {
   children: React.ReactNode;
@@ -16,7 +9,7 @@ type ThemeProviderProps = {
 
 type ThemeProviderState = {
   theme: ThemeEnum;
-  setTheme: (theme: ThemeEnum, persist?: boolean) => void;
+  setTheme: (theme: ThemeEnum) => void;
 };
 
 const initialState: ThemeProviderState = {
@@ -32,22 +25,14 @@ export function ThemeProvider({
   storageKey = 'vite-ui-theme',
   ...props
 }: ThemeProviderProps) {
-  const [theme, setThemeState] = useState<ThemeEnum>(
+  const [theme, setTheme] = useState<ThemeEnum>(
     () => (localStorage.getItem(storageKey) as ThemeEnum) || defaultTheme,
   );
-  const persistRef = useRef(true);
-
-  const setTheme = useCallback((nextTheme: ThemeEnum, persist = true) => {
-    persistRef.current = persist;
-    setThemeState(nextTheme);
-  }, []);
 
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove(ThemeEnum.Light, ThemeEnum.Dark);
-    if (persistRef.current) {
-      localStorage.setItem(storageKey, theme);
-    }
+    localStorage.setItem(storageKey, theme);
     root.classList.add(theme);
   }, [storageKey, theme]);
 
@@ -88,23 +73,11 @@ export function useSwitchToDarkThemeOnMount() {
 }
 
 export function useSyncThemeFromParams(theme: string | null) {
-  const { theme: contextTheme, setTheme } = useTheme();
-  const originalThemeRef = useRef<ThemeEnum | null>(null);
+  const { setTheme } = useTheme();
 
   useEffect(() => {
     if (theme && (theme === ThemeEnum.Light || theme === ThemeEnum.Dark)) {
-      if (originalThemeRef.current === null) {
-        originalThemeRef.current = contextTheme;
-      }
-      setTheme(theme as ThemeEnum, false);
+      setTheme(theme as ThemeEnum);
     }
-  }, [theme, contextTheme, setTheme]);
-
-  useEffect(() => {
-    return () => {
-      if (originalThemeRef.current !== null) {
-        setTheme(originalThemeRef.current, false);
-      }
-    };
-  }, [setTheme]);
+  }, [theme, setTheme]);
 }

@@ -17,8 +17,9 @@
 package common
 
 const (
-	TaskTypeIngestionTask = "ingestion_task"
-	TaskTypeIngestionTest = "ingestion_test"
+	TaskTypeIngestionTask    = "ingestion_task"
+	TaskTypeIngestionTasklet = "ingestion_tasklet"
+	TaskTypeIngestionTest    = "ingestion_test"
 )
 
 type TaskMessage struct {
@@ -30,9 +31,4 @@ type TaskHandle interface {
 	GetMessage() TaskMessage
 	Ack() error
 	Nack() error
-
-	// InProgress resets the AckWait timer without acknowledging the message,
-	// signalling the broker that the worker is still processing. Call
-	// periodically during long tasks to avoid in-flight redelivery.
-	InProgress() error
 }

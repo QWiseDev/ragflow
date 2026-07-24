@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import ast
 import json
-import os
 import re
 import subprocess
 import sys
@@ -24,17 +23,14 @@ def _read_bytes(path: Path) -> bytes:
     return path.read_bytes()
 
 
-def _git_paths(*args: str) -> list[Path]:
+def _staged_paths() -> list[Path]:
     proc = subprocess.run(
-        ["git", *args, "-z"],
+        ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
         check=True,
         capture_output=True,
+        text=True,
     )
-    return [Path(os.fsdecode(raw_path)) for raw_path in proc.stdout.split(b"\0") if raw_path]
-
-
-def _staged_paths() -> list[Path]:
-    return _git_paths("diff", "--cached", "--name-only", "--diff-filter=ACMR")
+    return [Path(line) for line in proc.stdout.splitlines() if line]
 
 
 def _report(errors: list[str]) -> int:
@@ -151,10 +147,15 @@ def check_symlinks(paths: list[Path], fix: bool = False) -> int:
 
 
 def check_case_conflicts(_: list[Path], fix: bool = False) -> int:
+    proc = subprocess.run(
+        ["git", "ls-files"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     seen: dict[str, str] = {}
     errors: list[str] = []
-    for raw_path in _git_paths("ls-files"):
-        path = str(raw_path)
+    for path in proc.stdout.splitlines():
         lowered = path.lower()
         other = seen.get(lowered)
         if other and other != path:

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Inspector } from 'react-dev-inspector';
+import { gotoVSCode, Inspector } from 'react-dev-inspector';
 import ReactDOM from 'react-dom/client';
 import '../tailwind.css';
 import App from './app';
@@ -9,7 +9,7 @@ import { initLanguage } from './locales/config';
 initLanguage().then(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <Inspector keys={['alt', 'c']} />
+      <Inspector keys={['alt', 'c']} onInspectElement={gotoVSCode} />
       <App />
     </React.StrictMode>,
   );

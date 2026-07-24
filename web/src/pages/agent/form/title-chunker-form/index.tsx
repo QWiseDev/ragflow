@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
-import { memo, useCallback, useState } from 'react';
+import { memo, useState } from 'react';
 import {
   useFieldArray,
   useForm,
@@ -22,7 +22,6 @@ import {
   initialTitleChunkerValues,
   TitleChunkerMethod,
 } from '../../constant/pipeline';
-import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -92,10 +91,6 @@ function LevelItem({
 
   const name = `${parentName}.${index}.expression`;
 
-  const handleRemove = useCallback(() => {
-    removeParent(index);
-  }, [removeParent, index]);
-
   return (
     <div className="flex items-center">
       <div className="flex-1">
@@ -113,7 +108,7 @@ function LevelItem({
           type="button"
           variant={'ghost'}
           size="sm"
-          onClick={handleRemove}
+          onClick={() => removeParent(index)}
         >
           <Trash2 className="h-3 w-3" />
         </Button>
@@ -142,10 +137,6 @@ function CardBody({ cardName }: CardBodyProps) {
     control: form.control,
   });
 
-  const handleAppendLevel = useCallback(() => {
-    appendLevel({ expression: '' });
-  }, [appendLevel]);
-
   return (
     <CardContent className="p-4">
       <div className="space-y-4">
@@ -160,7 +151,10 @@ function CardBody({ cardName }: CardBodyProps) {
         ))}
       </div>
 
-      <BlockButton type="button" onClick={handleAppendLevel} className="mt-4">
+      <BlockButton
+        onClick={() => appendLevel({ expression: '' })}
+        className="mt-4"
+      >
         {t('flow.addRegularExpressions')}
       </BlockButton>
     </CardContent>
@@ -179,53 +173,46 @@ function RulesFieldArray({ name }: RulesFieldArrayProps) {
     control: form.control,
   });
 
-  const handleAppendRule = useCallback(() => {
-    append({
-      levels: [{ expression: '' }],
-    });
-  }, [append]);
-
   return (
     <div className="space-y-4">
-      {fields.map((cardField, cardIndex) => {
-        const handleRemoveCard = () => remove(cardIndex);
-
-        return (
-          <Card key={cardField.id}>
-            <CardHeader className="flex flex-row justify-between items-center py-3 px-4 border-b bg-muted/20">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-sm">
-                  {t('flow.rule', 'Rule')} {cardIndex + 1}
-                </span>
-              </div>
-              {fields.length > 1 && (
-                <Button
-                  type="button"
-                  variant={'ghost'}
-                  size="sm"
-                  onClick={handleRemoveCard}
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              )}
-            </CardHeader>
-            <CardBody cardIndex={cardIndex} cardName={`${name}.${cardIndex}`} />
-          </Card>
-        );
-      })}
-      <BlockButton type="button" onClick={handleAppendRule} className="mt-4">
+      {fields.map((cardField, cardIndex) => (
+        <Card key={cardField.id}>
+          <CardHeader className="flex flex-row justify-between items-center py-3 px-4 border-b bg-muted/20">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-sm">
+                {t('flow.rule', 'Rule')} {cardIndex + 1}
+              </span>
+            </div>
+            {fields.length > 1 && (
+              <Button
+                type="button"
+                variant={'ghost'}
+                size="sm"
+                onClick={() => remove(cardIndex)}
+                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </CardHeader>
+          <CardBody cardIndex={cardIndex} cardName={`${name}.${cardIndex}`} />
+        </Card>
+      ))}
+      <BlockButton
+        onClick={() =>
+          append({
+            levels: [{ expression: '' }],
+          })
+        }
+        className="mt-4"
+      >
         {t('flow.addRule', 'Add Rule')}
       </BlockButton>
     </div>
   );
 }
 
-const TitleChunkerForm = ({
-  node,
-  onValuesChange,
-  hideOutputs,
-}: INextOperatorForm) => {
+const TitleChunkerForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
   const initialValues = useFormValues(initialTitleChunkerValues, node);
 
@@ -246,11 +233,6 @@ const TitleChunkerForm = ({
   const hierarchyOptions = useDynamicHierarchyOptions(form, activeRulesName);
 
   useWatchFormChange(node?.id, form);
-  useFormChangeCallback(form, onValuesChange);
-
-  const handleToggleShowAllTip = useCallback(() => {
-    setShowAllTip((prev) => !prev);
-  }, []);
 
   return (
     <Form {...form}>
@@ -275,7 +257,7 @@ const TitleChunkerForm = ({
         />
         <div
           className={`text-xs text-text-secondary w-full cursor-pointer `}
-          onClick={handleToggleShowAllTip}
+          onClick={() => setShowAllTip(!showAllTip)}
         >
           <div className={cn('flex justify-start items-start')}>
             <div
@@ -324,7 +306,9 @@ const TitleChunkerForm = ({
               {(field) => (
                 <Switch
                   checked={field.value}
-                  onCheckedChange={field.onChange}
+                  onCheckedChange={(checked) => {
+                    field.onChange?.(checked);
+                  }}
                 />
               )}
             </RAGFlowFormItem>
@@ -343,7 +327,9 @@ const TitleChunkerForm = ({
               {(field) => (
                 <Switch
                   checked={field.value}
-                  onCheckedChange={field.onChange}
+                  onCheckedChange={(checked) => {
+                    field.onChange?.(checked);
+                  }}
                 />
               )}
             </RAGFlowFormItem>
@@ -363,11 +349,9 @@ const TitleChunkerForm = ({
         </div>
         {/* )} */}
       </FormWrapper>
-      {!hideOutputs && (
-        <div className="p-5">
-          <Output list={outputList}></Output>
-        </div>
-      )}
+      <div className="p-5">
+        <Output list={outputList}></Output>
+      </div>
     </Form>
   );
 };

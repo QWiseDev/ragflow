@@ -45,7 +45,6 @@ import AgentCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
 import { PublishConfirmDialog } from './components/publish-confirm-dialog';
 import { Operator } from './constant';
-import { OwnerTenantIdContext } from './context';
 import { GlobalParamSheet } from './gobal-variable-sheet';
 import { useBuildDslData } from './hooks/use-build-dsl';
 import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
@@ -358,16 +357,14 @@ export default function Agent() {
           </DropdownMenu>
         </div>
       </PageHeader>
-      <OwnerTenantIdContext.Provider value={agentDetail?.user_id}>
-        <ReactFlowProvider>
-          <DropdownProvider>
-            <AgentCanvas
-              drawerVisible={chatDrawerVisible}
-              hideDrawer={hideChatDrawer}
-            ></AgentCanvas>
-          </DropdownProvider>
-        </ReactFlowProvider>
-      </OwnerTenantIdContext.Provider>
+      <ReactFlowProvider>
+        <DropdownProvider>
+          <AgentCanvas
+            drawerVisible={chatDrawerVisible}
+            hideDrawer={hideChatDrawer}
+          ></AgentCanvas>
+        </DropdownProvider>
+      </ReactFlowProvider>
       {embedVisible && (
         <EmbedDialog
           visible={embedVisible}

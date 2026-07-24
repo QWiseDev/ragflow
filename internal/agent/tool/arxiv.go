@@ -19,45 +19,26 @@ package tool
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"net/url"
-	"regexp"
-	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
-
-	"ragflow/internal/tokenizer"
 )
 
-const arxivToolName = "arxiv_search"
+const arxivToolName = "arxiv"
 
 const arxivToolDescription = "Search arXiv and return matching preprints as {title, authors, summary, pdf_url, entry_id}."
 
-const defaultArxivTopN = 12
-
-const defaultArxivSortBy = "submittedDate"
-
-const arxivPromptMaxTokens = 200000
-
-var arxivDataImagePattern = regexp.MustCompile(`!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+\-]+\)`)
-
-var arxivNewlinePattern = regexp.MustCompile(`\n+`)
-
-// arxivParams carries the query and ArXiv search settings. Info exposes only
-// query to match Python's tool meta; top_n and sort_by come from node params.
+// arxivParams is the JSON shape the model sends into InvokableRun.
 type arxivParams struct {
-	Query  string `json:"query"`
-	TopN   int    `json:"top_n"`
-	SortBy string `json:"sort_by"`
+	Query      string `json:"query"`
+	MaxResults int    `json:"max_results"`
 }
 
 // arxivResult is one entry in the model-facing result list.
@@ -107,12 +88,8 @@ type arxivLink struct {
 // against the public ArXiv API and parses the Atom XML response
 // using the stdlib encoding/xml package.
 type ArxivTool struct {
-	helper   *HTTPHelper
-	defaults arxivParams
+	helper *HTTPHelper
 }
-
-var _ ToolComponent = (*ArxivTool)(nil)
-var _ ReferenceBuilder = (*ArxivTool)(nil)
 
 // NewArxivTool returns an ArxivTool using the default HTTPHelper.
 func NewArxivTool() *ArxivTool {
@@ -122,22 +99,10 @@ func NewArxivTool() *ArxivTool {
 // NewArxivToolWith returns an ArxivTool that uses the provided
 // HTTPHelper. Useful for tests.
 func NewArxivToolWith(h *HTTPHelper) *ArxivTool {
-	return NewArxivToolWithParams(h, defaultArxivTopN, defaultArxivSortBy)
-}
-
-// NewArxivToolWithParams returns an ArxivTool with node-level search
-// settings. Query remains the only model-provided argument.
-func NewArxivToolWithParams(h *HTTPHelper, topN int, sortBy string) *ArxivTool {
 	if h == nil {
 		h = NewHTTPHelper()
 	}
-	if topN <= 0 {
-		topN = defaultArxivTopN
-	}
-	if sortBy == "" {
-		sortBy = defaultArxivSortBy
-	}
-	return &ArxivTool{helper: h, defaults: arxivParams{TopN: topN, SortBy: sortBy}}
+	return &ArxivTool{helper: h}
 }
 
 // Info returns the tool's metadata for the chat model.
@@ -148,38 +113,26 @@ func (a *ArxivTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"query": {
 				Type:     schema.String,
-				Desc:     "The search keywords to execute with arXiv. The keywords should be the most important words/terms(includes synonyms) from the original request.",
+				Desc:     "Search query (matches the arXiv `all:` field).",
 				Required: true,
+			},
+			"max_results": {
+				Type:     schema.Integer,
+				Desc:     "Maximum number of results to return. Defaults to 5.",
+				Required: false,
 			},
 		}),
 	}, nil
 }
 
-func (a *ArxivTool) ComponentSpec() ComponentSpec {
-	return ComponentSpec{
-		Inputs: map[string]string{"query": "Search query."},
-		Outputs: map[string]string{
-			"formalized_content": "Rendered arXiv references for downstream prompts.",
-			"json":               "arXiv paper list.",
-		},
-		InputForm: map[string]any{
-			"query": map[string]any{"name": "Query", "type": "line"},
-		},
-	}
-}
-
 // buildArxivURL constructs the ArXiv /api/query URL.
-func buildArxivURL(query string, topN int, sortBy string) string {
-	if topN <= 0 {
-		topN = defaultArxivTopN
-	}
-	if sortBy == "" {
-		sortBy = defaultArxivSortBy
+func buildArxivURL(query string, maxResults int) string {
+	if maxResults <= 0 {
+		maxResults = 5
 	}
 	q := url.Values{}
 	q.Set("search_query", "all:"+query)
-	q.Set("max_results", fmt.Sprintf("%d", topN))
-	q.Set("sortBy", sortBy)
+	q.Set("max_results", fmt.Sprintf("%d", maxResults))
 	return "http://export.arxiv.org/api/query?" + q.Encode()
 }
 
@@ -256,20 +209,12 @@ func (a *ArxivTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool
 		return arxivErrJSON(fmt.Errorf("arxiv: parse arguments: %w", err)),
 			fmt.Errorf("arxiv: parse arguments: %w", err)
 	}
-	p = mergeArxivDefaults(a.defaults, p)
-	if strings.TrimSpace(p.Query) == "" {
-		return arxivJSON(arxivEnvelope{Results: []arxivResult{}}), nil
-	}
-	if p.TopN <= 0 {
-		return arxivErrJSON(fmt.Errorf("top_n must be a positive integer")),
-			fmt.Errorf("arxiv: top_n must be a positive integer")
-	}
-	if !ArxivSortBySupported(p.SortBy) {
-		return arxivErrJSON(fmt.Errorf("unsupported sort_by %q", p.SortBy)),
-			fmt.Errorf("arxiv: unsupported sort_by %q", p.SortBy)
+	if p.Query == "" {
+		return arxivErrJSON(fmt.Errorf("query is required")),
+			fmt.Errorf("arxiv: query is required")
 	}
 
-	endpoint := buildArxivURL(strings.TrimSpace(p.Query), p.TopN, p.SortBy)
+	endpoint := buildArxivURL(p.Query, p.MaxResults)
 	resp, err := a.helper.Do(ctx, http.MethodGet, endpoint, "", "", nil)
 	if err != nil {
 		return arxivErrJSON(err), err
@@ -292,116 +237,6 @@ func (a *ArxivTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool
 		return arxivErrJSON(err), err
 	}
 	return arxivJSON(arxivEnvelope{Results: results}), nil
-}
-
-func (a *ArxivTool) BuildReferences(_ context.Context, envelope map[string]any) ([]map[string]any, []map[string]any) {
-	return buildArxivReferences(envelope)
-}
-
-func (a *ArxivTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
-	results := envelopeSlice(envelope, "results")
-	chunks, _ := buildArxivReferences(envelope)
-	return map[string]any{
-		"formalized_content": renderArxivReferences(chunks, arxivPromptMaxTokens),
-		"json":               results,
-	}
-}
-
-func buildArxivReferences(envelope map[string]any) ([]map[string]any, []map[string]any) {
-	results := envelopeSlice(envelope, "results")
-	chunks := make([]map[string]any, 0, len(results))
-	docAggs := make([]map[string]any, 0, len(results))
-	for _, result := range results {
-		paper, ok := result.(map[string]any)
-		if !ok {
-			continue
-		}
-		content := arxivDataImagePattern.ReplaceAllString(arxivText(paper["summary"]), "")
-		content = truncateArxivRunes(content, 10000)
-		if content == "" {
-			continue
-		}
-		documentID := strconv.FormatInt(arxivHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(arxivHashInt(documentID, 500), 10)
-		title := arxivText(paper["title"])
-		resultURL := arxivText(paper["pdf_url"])
-		chunks = append(chunks, map[string]any{
-			"id":            displayID,
-			"chunk_id":      documentID,
-			"content":       content,
-			"doc_id":        documentID,
-			"document_id":   documentID,
-			"docnm_kwd":     title,
-			"document_name": title,
-			"similarity":    1,
-			"score":         1,
-			"url":           resultURL,
-		})
-		docAggs = append(docAggs, map[string]any{"doc_name": title, "doc_id": documentID, "count": 1, "url": resultURL})
-	}
-	return chunks, docAggs
-}
-
-func renderArxivReferences(chunks []map[string]any, maxTokens int) string {
-	usedTokens := 0
-	blocks := make([]string, 0, len(chunks))
-	for _, chunk := range chunks {
-		content := arxivText(chunk["content"])
-		usedTokens += tokenizer.NumTokensFromString(content)
-		blocks = append(blocks, strings.Join([]string{
-			"\nID: " + arxivText(chunk["id"]),
-			"├── Title: " + arxivNewlinePattern.ReplaceAllString(arxivText(chunk["document_name"]), " "),
-			"├── URL: " + arxivNewlinePattern.ReplaceAllString(arxivText(chunk["url"]), " "),
-			"└── Content:\n" + content,
-		}, "\n"))
-		if maxTokens > 0 && float64(maxTokens)*0.97 < float64(usedTokens) {
-			break
-		}
-	}
-	return strings.Join(blocks, "\n")
-}
-
-func arxivText(value any) string {
-	if value == nil {
-		return ""
-	}
-	if text, ok := value.(string); ok {
-		return text
-	}
-	return fmt.Sprint(value)
-}
-
-func arxivHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
-}
-
-func truncateArxivRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
-}
-
-func mergeArxivDefaults(defaults, p arxivParams) arxivParams {
-	if p.TopN == 0 {
-		p.TopN = defaults.TopN
-	}
-	if p.SortBy == "" {
-		p.SortBy = defaults.SortBy
-	}
-	return p
-}
-
-// ArxivSortBySupported reports whether sortBy is accepted by the ArXiv API.
-func ArxivSortBySupported(sortBy string) bool {
-	switch sortBy {
-	case "submittedDate", "lastUpdatedDate", "relevance":
-		return true
-	default:
-		return false
-	}
 }
 
 func arxivJSON(env arxivEnvelope) string {

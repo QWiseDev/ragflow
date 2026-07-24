@@ -20,7 +20,7 @@ import pytest
 
 @pytest.mark.usefixtures("add_chat_assistants")
 class TestChatAssistantsList:
-    @pytest.mark.p3
+    @pytest.mark.p1
     def test_default(self, client):
         assistants = client.list_chats()
         assert len(assistants) == 5

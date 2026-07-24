@@ -70,8 +70,7 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderJSONIntegration(t *testing.T) {
 		"sanitize":                 sanitize,
 	})
 
-	ctx := t.Context()
-	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
+	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -100,8 +99,7 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderMarkdownFallback(t *testing.T) 
 		"output_format":            "markdown",
 		"opendataloader_apiserver": server.URL,
 	})
-	ctx := t.Context()
-	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
+	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -113,8 +111,7 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderMarkdownFallback(t *testing.T) 
 func TestPDFParser_ParseWithResult_OpenDataLoaderRequiresAPIServer(t *testing.T) {
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{"parse_method": "OpenDataLoader"})
-	ctx := t.Context()
-	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
+	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err == nil || !strings.Contains(res.Err.Error(), "opendataloader_apiserver") {
 		t.Fatalf("error = %v, want opendataloader_apiserver context", res.Err)
 	}

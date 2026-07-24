@@ -49,7 +49,7 @@ func TestSnapshotStageComparison(t *testing.T) {
 
 			// Run Go lyt.TextMerge with default params
 			meanH := map[int]float64{0: avg(s1.MeanHeight)}
-			merged := lyt.TextMerge(goBoxes, meanH)
+			merged := lyt.TextMerge(goBoxes, meanH, 3)
 
 			// Compare counts
 			if len(merged) > 0 {
@@ -61,11 +61,7 @@ func TestSnapshotStageComparison(t *testing.T) {
 
 			// Run Go lyt.NaiveVerticalMerge
 			meanW := map[int]float64{0: avg(s1.MeanWidth)}
-			pageEnglish := map[int]bool{}
-			if s1.IsEnglish {
-				pageEnglish[0] = true
-			}
-			vm := lyt.NaiveVerticalMerge(merged, meanH, meanW, pageEnglish)
+			vm := lyt.NaiveVerticalMerge(merged, meanH, meanW, s1.IsEnglish)
 			if s6, ok := snap.Stages["_naive_vertical_merge"]; ok {
 				t.Logf("  Go VerticalMerge: %d -> %d boxes (Python: %d->%d)",
 					len(merged), len(vm), s6.BoxesBefore, s6.BoxesAfter)

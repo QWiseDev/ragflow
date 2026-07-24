@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -82,7 +83,7 @@ func NewMemoryHandler(memoryService *service.MemoryService) *MemoryHandler {
 func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 	// Check if API timing is enabled
 	// If RAGFLOW_API_TIMING environment variable is set, request processing time will be logged
-	timingEnabled := common.GetEnv(common.EnvRAGFlowApiTiming)
+	timingEnabled := os.Getenv("RAGFLOW_API_TIMING")
 	var tStart time.Time
 	if timingEnabled != "" {
 		tStart = time.Now()
@@ -92,7 +93,7 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 	// GetUser is a context value set by the authentication middleware
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	userID := user.ID
@@ -105,7 +106,7 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 	}
 
 	// Validate required field: name
-	if strings.TrimSpace(req.Name) == "" {
+	if req.Name == "" {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "name is required")
 		return
 	}
@@ -206,7 +207,7 @@ func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
 	// Get current logged-in user information
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	userID := user.ID
@@ -306,7 +307,7 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 	// Get current logged-in user information
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -422,7 +423,7 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -525,7 +526,7 @@ type AddMessageRequest struct {
 func (h *MemoryHandler) AddMessage(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -587,7 +588,7 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -656,7 +657,7 @@ func parseMemoryMessagePath(memoryMessage string) (string, int64, error) {
 func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -668,7 +669,7 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 
 	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		common.ErrorWithCode(c, int(common.CodeArgumentError), err.Error())
 		return
 	}
 
@@ -712,7 +713,7 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -724,7 +725,7 @@ func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 
 	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		common.ErrorWithCode(c, int(common.CodeArgumentError), err.Error())
 		return
 	}
 
@@ -761,7 +762,7 @@ func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -788,10 +789,6 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 	similarityThreshold, _ := strconv.ParseFloat(c.DefaultQuery("similarity_threshold", "0.2"), 64)
 	keywordsSimilarityWeight, _ := strconv.ParseFloat(c.DefaultQuery("keywords_similarity_weight", "0.7"), 64)
 	topN, _ := strconv.Atoi(c.DefaultQuery("top_n", "5"))
-	if topN <= 0 || topN > 100 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "top_n must be between 1 and 100")
-		return
-	}
 
 	agentID := c.DefaultQuery("agent_id", "")
 	sessionID := c.DefaultQuery("session_id", "")
@@ -812,7 +809,7 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 
 	res, code, err := h.memoryService.SearchMessage(c.Request.Context(), userID, filterDict, params)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
@@ -834,7 +831,7 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 func (h *MemoryHandler) GetMessages(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -859,10 +856,6 @@ func (h *MemoryHandler) GetMessages(c *gin.Context) {
 	agentID := c.DefaultQuery("agent_id", "")
 	sessionID := c.DefaultQuery("session_id", "")
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
-	if limit <= 0 || limit > 100 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "limit must be between 1 and 100")
-		return
-	}
 	if len(memoryIDs) == 0 {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "memory_ids is required.")
 		return
@@ -870,7 +863,7 @@ func (h *MemoryHandler) GetMessages(c *gin.Context) {
 
 	data, code, err := h.memoryService.GetMessages(c.Request.Context(), memoryIDs, userID, agentID, sessionID, limit)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
@@ -892,10 +885,8 @@ func isArgumentError(msg string) bool {
 	// Define list of argument error prefixes
 	// Matches Python ArgumentException error messages
 	argumentErrorPrefixes := []string{
-		"memory name cannot be empty",  // Python: "Memory name cannot be empty or whitespace."
-		"name cannot be empty",         // ValidateName trimmed-empty case
+		"memory name cannot be empty",  // Memory name cannot be empty
 		"memory name exceeds limit",    // Memory name exceeds limit
-		"name length is",               // ValidateName exceeds limit
 		"memory type must be a list",   // memory_type must be a list
 		"memory type is not supported", // Unsupported memory_type
 	}

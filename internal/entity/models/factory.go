@@ -43,23 +43,21 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewMoonshotModel(baseURL, urlSuffix), nil
 	case "minimax":
 		return NewMinimaxModel(baseURL, urlSuffix), nil
-	case "giteeai":
+	case "gitee":
 		return NewGiteeModel(baseURL, urlSuffix), nil
 	case "siliconflow":
 		return NewSiliconflowModel(baseURL, urlSuffix), nil
-	case "gemini":
+	case "google":
 		return NewGoogleModel(baseURL, urlSuffix), nil
-	case "tongyi-qianwen":
+	case "aliyun":
 		return NewAliyunModel(baseURL, urlSuffix), nil
 	case "volcengine":
 		return NewVolcEngine(baseURL, urlSuffix), nil
 	case "vllm":
 		return NewVllmModel(baseURL, urlSuffix), nil
-	case "openai-api-compatible":
-		return NewOpenAIAPICompatibleModel(baseURL, urlSuffix), nil
 	case "xai":
 		return NewXAIModel(baseURL, urlSuffix), nil
-	case "lm-studio":
+	case "lmstudio":
 		return NewLmStudioModel(baseURL, urlSuffix), nil
 	case "ollama":
 		return NewOllamaModel(baseURL, urlSuffix), nil
@@ -75,13 +73,13 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewOpenRouterModel(baseURL, urlSuffix), nil
 	case "huggingface":
 		return NewHuggingFaceModel(baseURL, urlSuffix), nil
-	case "baiduyiyan":
+	case "baidu":
 		return NewBaiduModel(baseURL, urlSuffix), nil
 	case "cohere":
 		return NewCoHereModel(baseURL, urlSuffix), nil
 	case "cometapi":
 		return NewCometAPIModel(baseURL, urlSuffix), nil
-	case "fish audio":
+	case "fishaudio":
 		return NewFishAudioModel(baseURL, urlSuffix), nil
 	case "mistral":
 		return NewMistralModel(baseURL, urlSuffix), nil
@@ -103,35 +101,33 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewModelScopeModel(baseURL, urlSuffix), nil
 	case "longcat":
 		return NewLongCatModel(baseURL, urlSuffix), nil
-	case "tencent hunyuan":
+	case "hunyuan":
 		return NewHunyuanModel(baseURL, urlSuffix), nil
 	case "tokenpony":
 		return NewTokenPonyModel(baseURL, urlSuffix), nil
 	case "tokenhub":
 		return NewTokenHubModel(baseURL, urlSuffix), nil
-	case "novitaai":
+	case "novita":
 		return NewNovitaModel(baseURL, urlSuffix), nil
 	case "avian":
 		return NewAvianModel(baseURL, urlSuffix), nil
-	case "ragcon":
-		return NewRAGconModel(baseURL, urlSuffix), nil
 	case "replicate":
 		return NewReplicateModel(baseURL, urlSuffix), nil
 	case "togetherai":
 		return NewTogetherAIModel(baseURL, urlSuffix), nil
 	case "ppio":
 		return NewPPIOModel(baseURL, urlSuffix), nil
-	case "voyage ai":
+	case "voyage":
 		return NewVoyageModel(baseURL, urlSuffix), nil
 	case "paddleocr.net":
 		return NewPaddleOCRModel(baseURL, urlSuffix), nil
-	case "xunfei spark":
+	case "xunfei":
 		return NewXunFeiModel(baseURL, urlSuffix), nil
 	case "deepinfra":
 		return NewDeepInfraModel(baseURL, urlSuffix), nil
 	case "mineru.net":
 		return NewMinerUModel(baseURL, urlSuffix), nil
-	case "jiekou.ai":
+	case "jiekouai":
 		return NewJieKouAIModel(baseURL, urlSuffix), nil
 	case "302.ai":
 		return NewAI302Model(baseURL, urlSuffix), nil
@@ -157,8 +153,6 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewQiniuModel(baseURL, urlSuffix), nil
 	case "xiaomi":
 		return NewXiaomiModel(baseURL, urlSuffix), nil
-	case "funasr":
-		return NewFunASRModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

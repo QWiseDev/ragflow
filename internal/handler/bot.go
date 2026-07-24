@@ -78,13 +78,17 @@ func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{
-		"title":          title,
-		"avatar":         avatar,
-		"prologue":       prologue,
-		"has_tavily_key": hasTavily,
-		"llm_id":         llmID,
-	}, "success")
+	c.JSON(200, gin.H{
+		"code": common.CodeSuccess,
+		"data": gin.H{
+			"title":          title,
+			"avatar":         avatar,
+			"prologue":       prologue,
+			"has_tavily_key": hasTavily,
+			"llm_id":         llmID,
+		},
+		"message": "success",
+	})
 }
 
 // AgentbotInputs GET /api/v1/agentbots/<agent_id>/inputs
@@ -108,13 +112,17 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{
-		"title":    title,
-		"avatar":   avatar,
-		"inputs":   inputs,
-		"prologue": prologue,
-		"mode":     mode,
-	}, "success")
+	c.JSON(200, gin.H{
+		"code": common.CodeSuccess,
+		"data": gin.H{
+			"title":    title,
+			"avatar":   avatar,
+			"inputs":   inputs,
+			"prologue": prologue,
+			"mode":     mode,
+		},
+		"message": "success",
+	})
 }
 
 // AgentbotCompletion POST /api/v1/agentbots/<agent_id>/completions
@@ -256,31 +264,32 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 	}
 }
 
-// GetAgentbotLogs GET /api/v1/agentbots/<agent_id>/logs/<message_id>
+// GetAgentbotLogs GET /api/v1/agentbots/<shared_id>/logs/<message_id>
 //
 // Beta-token sibling of GetAgentLogs. The shared/embedded chat
 // page's "Thinking" button hits this endpoint because the share
 // flow authenticates with a beta APIToken (no session JWT) and
 // the regular /api/v1/agents/<id>/logs/<msg> requires @login_required.
-// Mirrors python bot_api.py:agent_bot_logs.
+// Mirrors python bot_api.py:agent_bot_logs (PR #15238).
+//
+// The <shared_id> path segment is the value the client passed in
+// the URL (typically the beta token in the share flow); the real
+// agent_id used to build the Redis key
+// (`<agent_id>-<message_id>-logs`) is read from the APIToken
+// looked up by the beta middleware and stashed in the gin
+// context as "agent_id". The endpoint never trusts the URL
+// segment for the data lookup — using the middleware-resolved
+// agent_id prevents a probe that swaps a victim's shared_id to
+// read another agent's logs.
 func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 	if _, code, msg := GetUser(c); code != common.CodeSuccess {
 		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
-	agentIDStr := c.Param("agent_id")
+	agentID, _ := c.Get("agent_id")
+	agentIDStr, _ := agentID.(string)
 	if agentIDStr == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "agent_id is required")
-		return
-	}
-	boundAgentID, _ := c.Get("agent_id")
-	boundAgentIDStr, _ := boundAgentID.(string)
-	if boundAgentIDStr == "" {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "API token is not bound to an agent.")
-		return
-	}
-	if boundAgentIDStr != agentIDStr {
-		common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "API token is not authorized for this agent.")
 		return
 	}
 	messageID := c.Param("message_id")
@@ -306,5 +315,9 @@ func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 			return
 		}
 	}
-	common.SuccessWithData(c, data, "success")
+	c.JSON(200, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    data,
+		"message": "success",
+	})
 }

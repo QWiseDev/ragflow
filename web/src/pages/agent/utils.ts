@@ -8,7 +8,6 @@ import {
   ICategorizeItemResult,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
-import { getBackendLanguage, isGoBackend } from '@/utils/backend-runtime';
 import { buildSelectOptions } from '@/utils/component-util';
 import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
@@ -22,6 +21,7 @@ import {
   omit,
   sample,
 } from 'lodash';
+import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
 import {
   AgentDialogueMode,
@@ -164,7 +164,10 @@ function buildCategorize(edges: Edge[], nodes: Node[], nodeId: string) {
 }
 
 const buildOperatorParams = (operatorName: string) =>
-  removeUselessDataInTheOperator(operatorName);
+  pipe(
+    removeUselessDataInTheOperator(operatorName),
+    // initializeOperatorParams(operatorName), // Final processing, for guarantee
+  );
 
 const ExcludeOperators = [Operator.Note, Operator.Tool, Operator.Placeholder];
 
@@ -203,16 +206,15 @@ function transformObjectArrayToPureArray(
     : [];
 }
 
-export function transformParserParams(params: ParserFormSchemaType) {
+function transformParserParams(params: ParserFormSchemaType) {
   const setups = params.setups.reduce<
     Record<string, ParserFormSchemaType['setups'][0]>
-  >((pre, cur, index) => {
+  >((pre, cur) => {
     if (cur.fileFormat) {
       let filteredSetup: Partial<
         ParserFormSchemaType['setups'][0] & { suffix: string[] } & {
           two_column_check: boolean;
           enable_multi_column: boolean;
-          pages: number[][];
         }
       > = {
         output_format: cur.output_format,
@@ -231,11 +233,6 @@ export function transformParserParams(params: ParserFormSchemaType) {
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
-            ...(isGoBackend()
-              ? {
-                  pages: cur.pages?.map((x) => [x.from, x.to]) ?? [],
-                }
-              : {}),
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -325,26 +322,15 @@ export function transformParserParams(params: ParserFormSchemaType) {
           break;
       }
 
-      pre[cur.fileFormat] = {
-        ...filteredSetup,
-        order_index: index,
-      } as any;
+      pre[cur.fileFormat] = filteredSetup;
     }
     return pre;
   }, {});
 
-  // The Go backend expects the setups map flattened into top-level params,
-  // while the Python backend reads them from the nested `setups` object.
-  // Default to the Python shape while the language probe is unresolved.
-  if (getBackendLanguage() === 'go') {
-    return { ...omit(params, ['setups']), ...setups };
-  }
   return { ...params, setups };
 }
 
-export function transformTokenChunkerParams(
-  params: TokenChunkerFormSchemaType,
-) {
+function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
   const { image_table_context_window, ...rest } = params;
   const imageTableContextWindow = Number(image_table_context_window || 0);
   return {
@@ -367,9 +353,7 @@ export function transformTokenChunkerParams(
   };
 }
 
-export function transformTitleChunkerParams(
-  params: TitleChunkerFormSchemaType,
-) {
+function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
   const activeRules =
     (params.method === TitleChunkerMethod.Group
       ? params.groupRules
@@ -399,7 +383,7 @@ export function transformTitleChunkerParams(
   };
 }
 
-export function transformExtractorParams(params: ExtractorFormSchemaType) {
+function transformExtractorParams(params: ExtractorFormSchemaType) {
   return { ...params, prompts: [{ content: params.prompts, role: 'user' }] };
 }
 

@@ -8,7 +8,6 @@ import {
 import { useGetChatSearchParams } from '@/hooks/use-chat-request';
 import { IMessage } from '@/interfaces/database/chat';
 import api from '@/utils/api';
-import { trim } from 'lodash';
 import { useCallback, useEffect } from 'react';
 import { useParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
@@ -78,7 +77,7 @@ export function useSendSingleMessage({
               : (derivedMessages ?? [])),
             message,
           ],
-          reasoning: Number(enableThinking),
+          reasoning: enableThinking,
           internet: enableInternet,
           ...params,
           pass_all_history_messages: true,
@@ -113,7 +112,6 @@ export function useSendSingleMessage({
       ...params
     }: NextMessageInputOnPressEnterParameter &
       CreateConversationBeforeSendMessageReturnType) => {
-      if (trim(value) === '' || !done) return;
       const id = uuid();
 
       addNewestQuestion({
@@ -157,7 +155,6 @@ export function useSendSingleMessage({
     removeMessageById,
     removeMessagesAfterCurrentMessage,
     handlePressEnter,
-    sendMessage,
     sendLoading: !done,
   };
 }

@@ -21,7 +21,6 @@ import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
 import { parseModelValue } from '@/utils/llm-util';
 import { PropsWithChildren, useMemo } from 'react';
-import { useOwnerTenantId } from '../../context';
 
 export function CardWithForm() {
   return (
@@ -82,11 +81,7 @@ export function LabelCard({ children, className, ...props }: LabelCardProps) {
 }
 
 export function LLMLabelCard({ llmId }: { llmId?: string }) {
-  const ownerTenantId = useOwnerTenantId();
-  const { data: allAddedModels } = useFetchAllAddedModels(
-    undefined,
-    ownerTenantId,
-  );
+  const { data: allAddedModels } = useFetchAllAddedModels();
 
   const isValidLlm = useMemo(() => {
     if (!llmId) return false;
@@ -101,15 +96,14 @@ export function LLMLabelCard({ llmId }: { llmId?: string }) {
       );
     }
 
-    // value is a plain model_id rather than the composite string
-    return allAddedModels.some((m) => m.model_id === llmId);
+    return false;
   }, [allAddedModels, llmId]);
 
   return (
     <LabelCard
       className={isValidLlm ? '' : 'bg-state-error-5 border-state-error border'}
     >
-      <LLMLabel value={llmId} ownerTenantId={ownerTenantId}></LLMLabel>
+      <LLMLabel value={llmId}></LLMLabel>
     </LabelCard>
   );
 }

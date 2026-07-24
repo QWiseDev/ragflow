@@ -20,9 +20,6 @@
       "model_types": [
         "chat"
       ],
-      "tools": {
-        "support": true
-      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -34,9 +31,6 @@
       "model_types": [
         "chat"
       ],
-      "tools": {
-        "support": true
-      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -48,9 +42,6 @@
       "model_types": [
         "chat"
       ],
-      "tools": {
-        "support": true
-      },
       "thinking": {
         "default_value": false,
         "clear_thinking": true
@@ -62,9 +53,6 @@
       "model_types": [
         "chat"
       ],
-      "tools": {
-        "support": true
-      },
       "thinking": {
         "default_value": false,
         "clear_thinking": true
@@ -75,10 +63,7 @@
       "max_tokens": 131072,
       "model_types": [
         "chat"
-      ],
-      "tools": {
-        "support": true
-      }
+      ]
     },
     {
       "name": "deepseek-r1-250528",
@@ -86,9 +71,6 @@
       "model_types": [
         "chat"
       ],
-      "tools": {
-        "support": true
-      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -100,9 +82,6 @@
       "model_types": [
         "chat"
       ],
-      "tools": {
-        "support": true
-      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -114,9 +93,6 @@
       "model_types": [
         "chat"
       ],
-      "tools": {
-        "support": true
-      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -128,9 +104,6 @@
       "model_types": [
         "chat"
       ],
-      "tools": {
-        "support": true
-      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -142,9 +115,6 @@
       "model_types": [
         "chat"
       ],
-      "tools": {
-        "support": true
-      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -155,10 +125,7 @@
       "max_tokens": 131072,
       "model_types": [
         "chat"
-      ],
-      "tools": {
-        "support": true
-      }
+      ]
     },
     {
       "name": "glm-5",
@@ -166,9 +133,6 @@
       "model_types": [
         "chat"
       ],
-      "tools": {
-        "support": true
-      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -180,9 +144,6 @@
       "model_types": [
         "chat"
       ],
-      "tools": {
-        "support": true
-      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -194,10 +155,7 @@
       "model_types": [
         "chat",
         "vision"
-      ],
-      "tools": {
-        "support": true
-      }
+      ]
     },
     {
       "name": "bge-m3",

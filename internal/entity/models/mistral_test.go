@@ -65,7 +65,6 @@ func TestMistralName(t *testing.T) {
 }
 
 func TestMistralChatHappyPath(t *testing.T) {
-	ctx := t.Context()
 	srv := newMistralServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "mistral-large-latest" {
 			t.Errorf("expected model=mistral-large-latest, got %v", body["model"])
@@ -88,9 +87,9 @@ func TestMistralChatHappyPath(t *testing.T) {
 
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
-	resp, err := m.ChatWithMessages(ctx, "mistral-large-latest", []Message{
+	resp, err := m.ChatWithMessages("mistral-large-latest", []Message{
 		{Role: "user", Content: "ping"},
-	}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -103,7 +102,6 @@ func TestMistralChatHappyPath(t *testing.T) {
 }
 
 func TestMistralChatPropagatesConfig(t *testing.T) {
-	ctx := t.Context()
 	srv := newMistralServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["max_tokens"] != float64(64) {
 			t.Errorf("max_tokens=%v want 64", body["max_tokens"])
@@ -130,10 +128,9 @@ func TestMistralChatPropagatesConfig(t *testing.T) {
 	temp := 0.3
 	topP := 0.9
 	stop := []string{"END"}
-	_, err := m.ChatWithMessages(ctx, "mistral-large-latest", []Message{{Role: "user", Content: "ping"}},
+	_, err := m.ChatWithMessages("mistral-large-latest", []Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
-		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -141,31 +138,28 @@ func TestMistralChatPropagatesConfig(t *testing.T) {
 }
 
 func TestMistralChatRequiresAPIKey(t *testing.T) {
-	ctx := t.Context()
 	m := newMistralForTest("http://unused")
-	_, err := m.ChatWithMessages(ctx, "mistral-large-latest", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
+	_, err := m.ChatWithMessages("mistral-large-latest", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
 	emptyKey := ""
-	_, err = m.ChatWithMessages(ctx, "mistral-large-latest", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
+	_, err = m.ChatWithMessages("mistral-large-latest", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("empty key: expected api-key error, got %v", err)
 	}
 }
 
 func TestMistralChatRequiresMessages(t *testing.T) {
-	ctx := t.Context()
 	m := newMistralForTest("http://unused")
 	apiKey := "test-key"
-	_, err := m.ChatWithMessages(ctx, "mistral-large-latest", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.ChatWithMessages("mistral-large-latest", nil, &APIConfig{ApiKey: &apiKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
 	}
 }
 
 func TestMistralChatRejectsHTTPError(t *testing.T) {
-	ctx := t.Context()
 	srv := newMistralServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
@@ -174,14 +168,13 @@ func TestMistralChatRejectsHTTPError(t *testing.T) {
 
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
-	_, err := m.ChatWithMessages(ctx, "mistral-large-latest", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.ChatWithMessages("mistral-large-latest", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}
 }
 
 func TestMistralChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
-	ctx := t.Context()
 	// Empty *Region pointer must fall back to the "default" entry, not
 	// be treated as an explicit "" region (which would miss the lookup).
 	srv := newMistralServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
@@ -194,17 +187,15 @@ func TestMistralChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	emptyRegion := ""
-	_, err := m.ChatWithMessages(ctx, "mistral-large-latest",
+	_, err := m.ChatWithMessages("mistral-large-latest",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey, Region: &emptyRegion}, nil, nil,
-	)
+		&APIConfig{ApiKey: &apiKey, Region: &emptyRegion}, nil)
 	if err != nil {
 		t.Errorf("empty Region: expected fallback to default, got %v", err)
 	}
 }
 
 func TestMistralListModelsFallsBackToDefaultOnEmptyRegion(t *testing.T) {
-	ctx := t.Context()
 	srv := newMistralServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{{"id": "x"}}})
 	})
@@ -213,38 +204,34 @@ func TestMistralListModelsFallsBackToDefaultOnEmptyRegion(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	emptyRegion := ""
-	if _, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey, Region: &emptyRegion}); err != nil {
+	if _, err := m.ListModels(&APIConfig{ApiKey: &apiKey, Region: &emptyRegion}); err != nil {
 		t.Errorf("empty Region: expected fallback to default, got %v", err)
 	}
 }
 
 func TestMistralStreamRequiresSender(t *testing.T) {
-	ctx := t.Context()
 	m := newMistralForTest("http://unused")
 	apiKey := "test-key"
-	err := m.ChatStreamlyWithSender(ctx, "mistral-large-latest",
+	err := m.ChatStreamlyWithSender("mistral-large-latest",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "sender is required") {
 		t.Errorf("expected sender-required error, got %v", err)
 	}
 }
 
 func TestMistralChatRejectsUnknownRegion(t *testing.T) {
-	ctx := t.Context()
 	m := newMistralForTest("http://unused")
 	apiKey := "test-key"
 	region := "eu"
-	_, err := m.ChatWithMessages(ctx, "mistral-large-latest", []Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey, Region: &region}, nil, nil,
-	)
+	_, err := m.ChatWithMessages("mistral-large-latest", []Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey, Region: &region}, nil)
 	if err == nil || !strings.Contains(err.Error(), "no base URL configured for region") {
 		t.Errorf("expected region error, got %v", err)
 	}
 }
 
 func TestMistralStreamHappyPath(t *testing.T) {
-	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -272,9 +259,9 @@ func TestMistralStreamHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	var chunks []string
 	var sawDone int32
-	err := m.ChatStreamlyWithSender(ctx, "mistral-large-latest",
+	err := m.ChatStreamlyWithSender("mistral-large-latest",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil,
+		&APIConfig{ApiKey: &apiKey}, nil,
 		func(content *string, _ *string) error {
 			if content == nil {
 				return nil
@@ -299,15 +286,13 @@ func TestMistralStreamHappyPath(t *testing.T) {
 }
 
 func TestMistralStreamRejectsExplicitFalse(t *testing.T) {
-	ctx := t.Context()
 	m := newMistralForTest("http://unused")
 	apiKey := "test-key"
 	stream := false
-	err := m.ChatStreamlyWithSender(ctx, "mistral-large-latest",
+	err := m.ChatStreamlyWithSender("mistral-large-latest",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
-		nil,
 		func(*string, *string) error { return nil },
 	)
 	if err == nil || !strings.Contains(err.Error(), "stream must be true") {
@@ -316,7 +301,6 @@ func TestMistralStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestMistralStreamFailsWithoutTerminal(t *testing.T) {
-	ctx := t.Context()
 	// Body closes before [DONE] or a finish_reason -> driver must complain
 	// instead of pretending the stream finished cleanly.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -327,9 +311,9 @@ func TestMistralStreamFailsWithoutTerminal(t *testing.T) {
 
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
-	err := m.ChatStreamlyWithSender(ctx, "mistral-large-latest",
+	err := m.ChatStreamlyWithSender("mistral-large-latest",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil,
+		&APIConfig{ApiKey: &apiKey}, nil,
 		func(*string, *string) error { return nil },
 	)
 	if err == nil || !strings.Contains(err.Error(), "stream ended before") {
@@ -338,7 +322,6 @@ func TestMistralStreamFailsWithoutTerminal(t *testing.T) {
 }
 
 func TestMistralListModelsHappyPath(t *testing.T) {
-	ctx := t.Context()
 	srv := newMistralServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -352,7 +335,7 @@ func TestMistralListModelsHappyPath(t *testing.T) {
 
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
-	ids, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
+	ids, err := m.ListModels(&APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -362,15 +345,13 @@ func TestMistralListModelsHappyPath(t *testing.T) {
 }
 
 func TestMistralListModelsRequiresAPIKey(t *testing.T) {
-	ctx := t.Context()
 	m := newMistralForTest("http://unused")
-	if _, err := m.ListModels(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := m.ListModels(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
 }
 
 func TestMistralCheckConnectionDelegatesToListModels(t *testing.T) {
-	ctx := t.Context()
 	// 200 -> CheckConnection succeeds; 401 -> CheckConnection propagates.
 	okSrv := newMistralServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{{"id": "x"}}})
@@ -383,36 +364,33 @@ func TestMistralCheckConnectionDelegatesToListModels(t *testing.T) {
 
 	apiKey := "test-key"
 	mOK := newMistralForTest(okSrv.URL)
-	if err := mOK.CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
+	if err := mOK.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Errorf("CheckConnection(ok): %v", err)
 	}
 	mFail := newMistralForTest(failSrv.URL)
-	if err := mFail.CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err == nil {
+	if err := mFail.CheckConnection(&APIConfig{ApiKey: &apiKey}); err == nil {
 		t.Error("CheckConnection(fail): expected error, got nil")
 	}
 }
 
 func TestMistralBalanceReturnsNoSuchMethod(t *testing.T) {
-	ctx := t.Context()
 	m := newMistralForTest("http://unused")
-	_, err := m.Balance(ctx, &APIConfig{})
+	_, err := m.Balance(&APIConfig{})
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: expected 'no such method', got %v", err)
 	}
 }
 
 func TestMistralRerankReturnsNoSuchMethod(t *testing.T) {
-	ctx := t.Context()
 	m := newMistralForTest("http://unused")
 	q := "mistral-large-latest"
-	_, err := m.Rerank(ctx, &q, "what is rag?", []string{"a", "b"}, &APIConfig{}, &RerankConfig{TopN: 2}, nil)
+	_, err := m.Rerank(&q, "what is rag?", []string{"a", "b"}, &APIConfig{}, &RerankConfig{TopN: 2})
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: expected 'no such method', got %v", err)
 	}
 }
 
 func TestMistralUnsupportedDefaultsReturnNoSuchMethod(t *testing.T) {
-	ctx := t.Context()
 	m := newMistralForTest("http://unused")
 	modelName := "mistral-large-latest"
 
@@ -421,29 +399,29 @@ func TestMistralUnsupportedDefaultsReturnNoSuchMethod(t *testing.T) {
 		call func() error
 	}{
 		{"TranscribeAudio", func() error {
-			_, err := m.TranscribeAudio(ctx, &modelName, nil, &APIConfig{}, nil, nil)
+			_, err := m.TranscribeAudio(&modelName, nil, &APIConfig{}, nil)
 			return err
 		}},
 		{"TranscribeAudioWithSender", func() error {
-			return m.TranscribeAudioWithSender(ctx, &modelName, nil, &APIConfig{}, nil, nil, nil)
+			return m.TranscribeAudioWithSender(&modelName, nil, &APIConfig{}, nil, nil)
 		}},
 		{"AudioSpeech", func() error {
-			_, err := m.AudioSpeech(ctx, &modelName, nil, &APIConfig{}, nil, nil)
+			_, err := m.AudioSpeech(&modelName, nil, &APIConfig{}, nil)
 			return err
 		}},
 		{"AudioSpeechWithSender", func() error {
-			return m.AudioSpeechWithSender(ctx, &modelName, nil, &APIConfig{}, nil, nil, nil)
+			return m.AudioSpeechWithSender(&modelName, nil, &APIConfig{}, nil, nil)
 		}},
 		{"ParseFile", func() error {
-			_, err := m.ParseFile(ctx, &modelName, nil, nil, &APIConfig{}, nil, nil)
+			_, err := m.ParseFile(&modelName, nil, nil, &APIConfig{}, nil)
 			return err
 		}},
 		{"ListTasks", func() error {
-			_, err := m.ListTasks(ctx, &APIConfig{})
+			_, err := m.ListTasks(&APIConfig{})
 			return err
 		}},
 		{"ShowTask", func() error {
-			_, err := m.ShowTask(ctx, "task-id", &APIConfig{})
+			_, err := m.ShowTask("task-id", &APIConfig{})
 			return err
 		}},
 	}
@@ -456,7 +434,6 @@ func TestMistralUnsupportedDefaultsReturnNoSuchMethod(t *testing.T) {
 }
 
 func TestMistralEmbedHappyPath(t *testing.T) {
-	ctx := t.Context()
 	srv := newMistralServer(t, "/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "mistral-embed" {
 			t.Errorf("model=%v want mistral-embed", body["model"])
@@ -478,7 +455,7 @@ func TestMistralEmbedHappyPath(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	model := "mistral-embed"
-	vecs, err := m.Embed(ctx, &model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := m.Embed(&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -491,7 +468,6 @@ func TestMistralEmbedHappyPath(t *testing.T) {
 }
 
 func TestMistralEmbedReordersByIndex(t *testing.T) {
-	ctx := t.Context()
 	// Upstream returns the three vectors in shuffled order. The driver
 	// must reorder them so the slot at position i corresponds to input i.
 	srv := newMistralServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
@@ -508,7 +484,7 @@ func TestMistralEmbedReordersByIndex(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	model := "mistral-embed"
-	vecs, err := m.Embed(ctx, &model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := m.Embed(&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -520,7 +496,6 @@ func TestMistralEmbedReordersByIndex(t *testing.T) {
 }
 
 func TestMistralEmbedEmptyInputShortCircuits(t *testing.T) {
-	ctx := t.Context()
 	// Empty input must NOT make an HTTP call; the test fails the request
 	// rather than the assertion if it does.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -532,7 +507,7 @@ func TestMistralEmbedEmptyInputShortCircuits(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	model := "mistral-embed"
-	vecs, err := m.Embed(ctx, &model, []string{}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := m.Embed(&model, []string{}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		t.Fatalf("Embed([]): %v", err)
 	}
@@ -542,32 +517,29 @@ func TestMistralEmbedEmptyInputShortCircuits(t *testing.T) {
 }
 
 func TestMistralEmbedRequiresAPIKey(t *testing.T) {
-	ctx := t.Context()
 	m := newMistralForTest("http://unused")
 	model := "mistral-embed"
-	_, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := m.Embed(&model, []string{"a"}, &APIConfig{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
 }
 
 func TestMistralEmbedRequiresModelName(t *testing.T) {
-	ctx := t.Context()
 	m := newMistralForTest("http://unused")
 	apiKey := "test-key"
-	_, err := m.Embed(ctx, nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
 	empty := ""
-	_, err = m.Embed(ctx, &empty, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err = m.Embed(&empty, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("empty model: expected model-name error, got %v", err)
 	}
 }
 
 func TestMistralEmbedRejectsDuplicateIndex(t *testing.T) {
-	ctx := t.Context()
 	// A malformed upstream that repeats data[*].index would silently
 	// overwrite the earlier vector; the driver must fail loudly instead.
 	srv := newMistralServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
@@ -583,14 +555,13 @@ func TestMistralEmbedRejectsDuplicateIndex(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	model := "mistral-embed"
-	_, err := m.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index 0") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
 }
 
 func TestMistralEmbedRejectsOutOfRangeIndex(t *testing.T) {
-	ctx := t.Context()
 	srv := newMistralServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -603,14 +574,13 @@ func TestMistralEmbedRejectsOutOfRangeIndex(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	model := "mistral-embed"
-	_, err := m.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
 }
 
 func TestMistralEmbedRejectsMissingSlot(t *testing.T) {
-	ctx := t.Context()
 	// Upstream returns only one of the two requested embeddings.
 	srv := newMistralServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -624,14 +594,13 @@ func TestMistralEmbedRejectsMissingSlot(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	model := "mistral-embed"
-	_, err := m.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding for input index 1") {
 		t.Errorf("expected missing-embedding error for slot 1, got %v", err)
 	}
 }
 
 func TestMistralEmbedRejectsHTTPError(t *testing.T) {
-	ctx := t.Context()
 	srv := newMistralServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
@@ -641,7 +610,7 @@ func TestMistralEmbedRejectsHTTPError(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	model := "mistral-embed"
-	_, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "Mistral embeddings API error") {
 		t.Errorf("expected Mistral embeddings API error, got %v", err)
 	}
@@ -652,7 +621,6 @@ func TestMistralEmbedRejectsHTTPError(t *testing.T) {
 // Regression net: the existing string-content path stays green for every
 // non-reasoning Mistral model.
 func TestMistralChatHandlesStringContent(t *testing.T) {
-	ctx := t.Context()
 	srv := newMistralServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{"message": map[string]interface{}{
@@ -665,9 +633,9 @@ func TestMistralChatHandlesStringContent(t *testing.T) {
 
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
-	resp, err := m.ChatWithMessages(ctx, "ministral-3b-latest",
+	resp, err := m.ChatWithMessages("ministral-3b-latest",
 		[]Message{{Role: "user", Content: "ping"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil)
+		&APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -687,7 +655,6 @@ func TestMistralChatHandlesStringContent(t *testing.T) {
 // from api.mistral.ai/v1/chat/completions against magistral-medium-latest
 // with the prompt "When do two trains meet?".
 func TestMistralChatExtractsReasoningFromStructuredContent(t *testing.T) {
-	ctx := t.Context()
 	srv := newMistralServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{"message": map[string]interface{}{
@@ -710,9 +677,9 @@ func TestMistralChatExtractsReasoningFromStructuredContent(t *testing.T) {
 
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
-	resp, err := m.ChatWithMessages(ctx, "magistral-medium-latest",
+	resp, err := m.ChatWithMessages("magistral-medium-latest",
 		[]Message{{Role: "user", Content: "When do they meet?"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil)
+		&APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -729,7 +696,6 @@ func TestMistralChatExtractsReasoningFromStructuredContent(t *testing.T) {
 // magistral with a trivial answer that needed no reasoning returns the
 // structured shape with only a `text` part. ReasonContent must be empty.
 func TestMistralChatHandlesStructuredContentWithoutThinking(t *testing.T) {
-	ctx := t.Context()
 	srv := newMistralServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{"message": map[string]interface{}{
@@ -744,9 +710,9 @@ func TestMistralChatHandlesStructuredContentWithoutThinking(t *testing.T) {
 
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
-	resp, err := m.ChatWithMessages(ctx, "magistral-small-latest",
+	resp, err := m.ChatWithMessages("magistral-small-latest",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil)
+		&APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -762,7 +728,6 @@ func TestMistralChatHandlesStructuredContentWithoutThinking(t *testing.T) {
 // the parser forward-compatible with new Mistral content variants
 // (audio chunks, citations, etc.) that ragflow doesn't surface yet.
 func TestMistralChatIgnoresUnknownContentPartTypes(t *testing.T) {
-	ctx := t.Context()
 	srv := newMistralServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{"message": map[string]interface{}{
@@ -779,9 +744,9 @@ func TestMistralChatIgnoresUnknownContentPartTypes(t *testing.T) {
 
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
-	resp, err := m.ChatWithMessages(ctx, "magistral-small-latest",
+	resp, err := m.ChatWithMessages("magistral-small-latest",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil)
+		&APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}

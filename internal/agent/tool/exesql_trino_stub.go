@@ -43,7 +43,7 @@ package tool
 import (
 	"fmt"
 	"net/url"
-	"ragflow/internal/common"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -71,7 +71,7 @@ func splitTrinoCatalogSchema(db string) (catalog, schema string) {
 // design doc §10.1 + gap analysis §11.4.1 row 5c.
 func trinoDSN(p exesqlConnParams) string {
 	scheme := "http"
-	if common.GetEnv(common.EnvTrinoUseTls) != "" {
+	if os.Getenv("TRINO_USE_TLS") != "" {
 		scheme = "https"
 	}
 	port := p.Port

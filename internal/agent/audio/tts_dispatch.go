@@ -61,7 +61,6 @@ import (
 // consumer.
 type TTSDispatcher interface {
 	AudioSpeech(
-		ctx context.Context,
 		providerName, instanceName, modelName, modelID *string,
 		userID string,
 		audioContent *string,
@@ -124,7 +123,6 @@ func NewTTSDispatchFunc(d TTSDispatcher) ModelProviderFunc {
 
 		text := req.Text
 		resp, code, err := d.AudioSpeech(
-			ctx,
 			nil, // providerName — let the dispatcher resolve by name
 			nil, // instanceName — same
 			modelName,

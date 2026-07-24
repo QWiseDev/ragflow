@@ -17,7 +17,6 @@
 package dao
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -36,10 +35,10 @@ func NewChatDAO() *ChatDAO {
 }
 
 // ListByTenantID list chats by tenant ID
-func (dao *ChatDAO) ListByTenantID(ctx context.Context, db *gorm.DB, tenantID string, status string) ([]*entity.Chat, error) {
+func (dao *ChatDAO) ListByTenantID(tenantID string, status string) ([]*entity.Chat, error) {
 	var chats []*entity.Chat
 
-	query := db.WithContext(ctx).Model(&entity.Chat{}).
+	query := DB.Model(&entity.Chat{}).
 		Where("tenant_id = ?", tenantID)
 
 	if status != "" {
@@ -55,12 +54,12 @@ func (dao *ChatDAO) ListByTenantID(ctx context.Context, db *gorm.DB, tenantID st
 }
 
 // ListByTenantIDs list chats by tenant IDs with pagination and filtering
-func (dao *ChatDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*entity.ChatListItem, int64, error) {
-	var chats []*entity.ChatListItem
+func (dao *ChatDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*entity.Chat, int64, error) {
+	var chats []*entity.Chat
 	var total int64
 
 	// Build query with join to user table for nickname and avatar
-	query := db.WithContext(ctx).Model(&entity.Chat{}).
+	query := DB.Model(&entity.Chat{}).
 		Select(`
 			dialog.*,
 			user.nickname,
@@ -94,11 +93,11 @@ func (dao *ChatDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs 
 	// Apply pagination
 	if page > 0 && pageSize > 0 {
 		offset := (page - 1) * pageSize
-		if err := query.Offset(offset).Limit(pageSize).Scan(&chats).Error; err != nil {
+		if err := query.Offset(offset).Limit(pageSize).Find(&chats).Error; err != nil {
 			return nil, 0, err
 		}
 	} else {
-		if err := query.Scan(&chats).Error; err != nil {
+		if err := query.Find(&chats).Error; err != nil {
 			return nil, 0, err
 		}
 	}
@@ -107,11 +106,11 @@ func (dao *ChatDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs 
 }
 
 // ListByOwnerIDs list chats by owner IDs with filtering (manual pagination)
-func (dao *ChatDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*entity.ChatListItem, int64, error) {
-	var chats []*entity.ChatListItem
+func (dao *ChatDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*entity.Chat, int64, error) {
+	var chats []*entity.Chat
 
 	// Build query with join to user table
-	query := db.WithContext(ctx).Model(&entity.Chat{}).
+	query := DB.Model(&entity.Chat{}).
 		Select(`
 			dialog.*,
 			user.nickname,
@@ -136,7 +135,7 @@ func (dao *ChatDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []
 	query = query.Order(orderby + " " + orderDirection)
 
 	// Get all matching records
-	if err := query.Scan(&chats).Error; err != nil {
+	if err := query.Find(&chats).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -146,9 +145,9 @@ func (dao *ChatDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []
 }
 
 // GetByID gets chat by ID
-func (dao *ChatDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Chat, error) {
+func (dao *ChatDAO) GetByID(id string) (*entity.Chat, error) {
 	var chat entity.Chat
-	err := db.WithContext(ctx).Where("id = ?", id).First(&chat).Error
+	err := DB.Where("id = ?", id).First(&chat).Error
 	if err != nil {
 		return nil, err
 	}
@@ -156,9 +155,9 @@ func (dao *ChatDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entit
 }
 
 // GetByIDAndStatus gets chat by ID and status
-func (dao *ChatDAO) GetByIDAndStatus(ctx context.Context, db *gorm.DB, id string, status string) (*entity.Chat, error) {
+func (dao *ChatDAO) GetByIDAndStatus(id string, status string) (*entity.Chat, error) {
 	var chat entity.Chat
-	err := db.WithContext(ctx).Where("id = ? AND status = ?", id, status).First(&chat).Error
+	err := DB.Where("id = ? AND status = ?", id, status).First(&chat).Error
 	if err != nil {
 		return nil, err
 	}
@@ -166,32 +165,30 @@ func (dao *ChatDAO) GetByIDAndStatus(ctx context.Context, db *gorm.DB, id string
 }
 
 // GetExistingNames gets existing dialog names for a tenant
-func (dao *ChatDAO) GetExistingNames(ctx context.Context, db *gorm.DB, tenantID string, status string) ([]string, error) {
+func (dao *ChatDAO) GetExistingNames(tenantID string, status string) ([]string, error) {
 	var names []string
-	err := db.WithContext(ctx).Model(&entity.Chat{}).
+	err := DB.Model(&entity.Chat{}).
 		Where("tenant_id = ? AND status = ?", tenantID, status).
 		Pluck("name", &names).Error
 	return names, err
 }
 
 // ExistsByNameTenantStatus checks whether a chat with the given name exists.
-func (dao *ChatDAO) ExistsByNameTenantStatus(ctx context.Context, db *gorm.DB, name, tenantID, status string) (bool, error) {
+func (dao *ChatDAO) ExistsByNameTenantStatus(name, tenantID, status string) (bool, error) {
 	var count int64
-	err := db.WithContext(ctx).Model(&entity.Chat{}).
+	err := DB.Model(&entity.Chat{}).
 		Where("name = ? AND tenant_id = ? AND status = ?", name, tenantID, status).
 		Count(&count).Error
 	return count > 0, err
 }
 
 // Create creates a new chat/dialog
-func (dao *ChatDAO) Create(ctx context.Context, db *gorm.DB, chat *entity.Chat) error {
-	// Select("*") forces GORM to persist explicit zero values (e.g. similarity_threshold=0,
-	// vector_similarity_weight=0, top_n=0) instead of substituting the column defaults.
-	return db.WithContext(ctx).Select("*").Create(chat).Error
+func (dao *ChatDAO) Create(chat *entity.Chat) error {
+	return DB.Create(chat).Error
 }
 
 // UpdateByID updates a chat by ID
-func (dao *ChatDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
+func (dao *ChatDAO) UpdateByID(id string, updates map[string]interface{}) error {
 	if updates == nil {
 		updates = make(map[string]interface{})
 	}
@@ -200,7 +197,7 @@ func (dao *ChatDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, upda
 	updates["update_time"] = now.UnixMilli()
 	updates["update_date"] = now.Truncate(time.Second)
 
-	result := db.WithContext(ctx).Session(&gorm.Session{SkipHooks: true}).Model(&entity.Chat{}).Where("id = ?", id).Updates(updates)
+	result := DB.Session(&gorm.Session{SkipHooks: true}).Model(&entity.Chat{}).Where("id = ?", id).Updates(updates)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -217,13 +214,13 @@ func (dao *ChatDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, upda
 }
 
 // UpdateManyByID updates multiple chats by ID (batch update)
-func (dao *ChatDAO) UpdateManyByID(ctx context.Context, db *gorm.DB, updates []map[string]interface{}) error {
+func (dao *ChatDAO) UpdateManyByID(updates []map[string]interface{}) error {
 	if len(updates) == 0 {
 		return nil
 	}
 
 	// Use transaction for batch update
-	tx := db.WithContext(ctx).Begin()
+	tx := DB.Begin()
 	if tx.Error != nil {
 		return tx.Error
 	}
@@ -253,15 +250,15 @@ func (dao *ChatDAO) UpdateManyByID(ctx context.Context, db *gorm.DB, updates []m
 }
 
 // DeleteByTenantID deletes all chats by tenant ID (hard delete)
-func (dao *ChatDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.Chat{})
+func (dao *ChatDAO) DeleteByTenantID(tenantID string) (int64, error) {
+	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.Chat{})
 	return result.RowsAffected, result.Error
 }
 
 // GetAllDialogIDsByTenantID gets all dialog IDs by tenant ID
-func (dao *ChatDAO) GetAllDialogIDsByTenantID(ctx context.Context, db *gorm.DB, tenantID string) ([]string, error) {
+func (dao *ChatDAO) GetAllDialogIDsByTenantID(tenantID string) ([]string, error) {
 	var dialogIDs []string
-	err := db.WithContext(ctx).Model(&entity.Chat{}).
+	err := DB.Model(&entity.Chat{}).
 		Where("tenant_id = ?", tenantID).
 		Pluck("id", &dialogIDs).Error
 	return dialogIDs, err
@@ -270,8 +267,8 @@ func (dao *ChatDAO) GetAllDialogIDsByTenantID(ctx context.Context, db *gorm.DB, 
 // QueryByTenantIDAndID checks if a chat exists with given tenant_id and id
 // Reference: Python DialogService.query(tenant_id=tenant.tenant_id, id=chat_id, status=StatusEnum.VALID.value)
 // Used for permission verification in get_chat API
-func (dao *ChatDAO) QueryByTenantIDAndID(ctx context.Context, db *gorm.DB, tenantID string, chatID string, status string) ([]*entity.Chat, error) {
+func (dao *ChatDAO) QueryByTenantIDAndID(tenantID string, chatID string, status string) ([]*entity.Chat, error) {
 	var chats []*entity.Chat
-	err := db.WithContext(ctx).Where("tenant_id = ? AND id = ? AND status = ?", tenantID, chatID, status).Find(&chats).Error
+	err := DB.Where("tenant_id = ? AND id = ? AND status = ?", tenantID, chatID, status).Find(&chats).Error
 	return chats, err
 }

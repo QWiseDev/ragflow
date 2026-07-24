@@ -26,17 +26,15 @@ import (
 	"ragflow/internal/admin"
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/handler"
-	ingestion "ragflow/internal/ingestion/service"
+	"ragflow/internal/ingestion"
 	"ragflow/internal/mcp"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
 	"ragflow/internal/service/chunk"
-	dataset "ragflow/internal/service/dataset"
-	"ragflow/internal/service/document"
-	"ragflow/internal/service/file"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/storage"
 	"ragflow/internal/syncer"
@@ -49,12 +47,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"ragflow/internal/agent/component"
+	_ "ragflow/internal/agent/component"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
-	_ "ragflow/internal/ingestion/wire"
+	_ "ragflow/internal/ingestion/wire" // single owner for ingestion-component registration (File / Parser / Tokenizer / Extractor + 4 Chunker variants)
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 )
@@ -212,9 +210,6 @@ func printHelp(args *serverArgs) {
 }
 
 func main() {
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
-	defer cancel()
-
 	arguments, err := parseArgs()
 	if err != nil {
 		fmt.Printf("Failed to parse arguments: %v\n", err)
@@ -227,7 +222,7 @@ func main() {
 	}
 
 	if arguments.versionFlag {
-		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
+		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
 		return
 	}
 
@@ -254,7 +249,7 @@ func main() {
 		logLevel = "debug"
 	}
 
-	if err = common.Init(logLevel, common.FileOutput{Path: logFile}, serverName); err != nil {
+	if err = common.Init(logLevel, common.FileOutput{Path: logFile}); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -332,7 +327,7 @@ func main() {
 	if config.Log.Path != "" {
 		fileOut.Path = config.Log.Path
 	}
-	if err = common.Init(logLevel, fileOut, serverName); err != nil {
+	if err = common.Init(logLevel, fileOut); err != nil {
 		common.Error("Failed to reinitialize logger with configured level", err)
 	}
 
@@ -343,7 +338,7 @@ func main() {
 	server.PrintAll()
 
 	// Initialize database
-	if err = dao.InitDB(ctx, arguments.migrateDB); err != nil {
+	if err = dao.InitDB(arguments.migrateDB); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
 	}
 
@@ -360,12 +355,11 @@ func main() {
 	defer redis.Close()
 
 	if err = storage.InitStorageFactory(); err != nil {
-		common.Error("Failed to initialize storage factory", err)
+		common.Fatal("Failed to initialize storage factory", zap.Error(err))
 	}
-	defer storage.CloseStorage()
 
-	if err = engine.InitMessageQueueEngine(config.Ingestor.MQType); err != nil {
-		common.Error("Failed to initialize message queue engine", err)
+	if err = engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
+		common.Fatal("Failed to initialize message queue engine", zap.Error(err))
 	}
 
 	// Initialize server variables (runtime variables that can change during operation)
@@ -374,35 +368,29 @@ func main() {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
-	if err = server.StartServer(ctx, cancel, serverName); err != nil {
-		common.Error("Failed to start EE server", err)
-		os.Exit(1)
-	}
-	defer server.ShutdownServer(ctx)
-
 	if arguments.name == nil {
 		arguments.name = &serverName
 	}
 
 	switch *arguments.mode {
 	case "api":
-		if err = runAPI(ctx, arguments); err != nil {
+		if err = runAPI(arguments); err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
 			os.Exit(1)
 		}
 	case "admin":
 		if err = runAdmin(arguments); err != nil {
-			fmt.Printf("Failed to start ADMIN server: %v\n", err)
+			fmt.Printf("Failed to start admin server: %v\n", err)
 			os.Exit(1)
 		}
 	case "ingestor":
 		if err = runIngestor(arguments); err != nil {
-			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
+			fmt.Printf("Failed to start ingestion worker: %v\n", err)
 			os.Exit(1)
 		}
 	case "syncer":
 		if err = runSyncer(arguments); err != nil {
-			fmt.Printf("Failed to start SYNCER: %v\n", err)
+			fmt.Printf("Failed to start syncer: %v\n", err)
 			os.Exit(1)
 		}
 	default:
@@ -412,17 +400,6 @@ func main() {
 }
 
 func runAdmin(args *serverArgs) error {
-
-	// Create HTTP server
-	config := server.GetConfig()
-
-	// Set Gin mode
-	if config.Server.Mode == "release" {
-		gin.SetMode(gin.ReleaseMode)
-	} else {
-		gin.SetMode(gin.DebugMode)
-	}
-
 	adminService := admin.NewService()
 	adminHandler := admin.NewHandler(adminService)
 
@@ -446,6 +423,8 @@ func runAdmin(args *serverArgs) error {
 	// Setup routes
 	r.Setup(ginEngine)
 
+	// Create HTTP server
+	config := server.GetConfig()
 	addr := fmt.Sprintf(":%d", config.Admin.Port)
 	srv := &http.Server{
 		Addr:    addr,
@@ -461,7 +440,7 @@ func runAdmin(args *serverArgs) error {
 		"    /_/ |_/_/  |_\\____/_/   /_/\\____/|__/|__/  /_/  |_\\__,_/_/ /_/ /_/_/_/ /_/ \n")
 
 	// Print RAGFlow version
-	common.Info(fmt.Sprintf("RAGFlow admin version: %s", common.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("RAGFlow admin version: %s", utility.GetRAGFlowVersion()))
 
 	// Start HTTP server in a goroutine
 	go func() {
@@ -480,11 +459,11 @@ func runAdmin(args *serverArgs) error {
 	common.Info("Shutting down RAGFlow HTTP server...")
 
 	// Create context with timeout for graceful shutdown
-	quitCtx, quitCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer quitCancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	// Shutdown HTTP server
-	if err := srv.Shutdown(quitCtx); err != nil {
+	if err := srv.Shutdown(ctx); err != nil {
 		common.Fatal("Server forced to shutdown", zap.Error(err))
 	}
 
@@ -493,12 +472,6 @@ func runAdmin(args *serverArgs) error {
 }
 
 func runIngestor(args *serverArgs) error {
-	// Initialize tokenizer (rag_analyzer)
-	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
-	if err := tokenizer.Init(&tokenizer.PoolConfig{}); err != nil {
-		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
-	}
-	defer tokenizer.Close()
 
 	ingestor := ingestion.NewIngestor(*args.name, 2, []string{"pdf", "docx", "txt"})
 
@@ -521,7 +494,7 @@ func runIngestor(args *serverArgs) error {
 		"          /____/\n")
 
 	// Print RAGFlow version
-	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", common.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", utility.GetRAGFlowVersion()))
 
 	// Get local IP address for heartbeat reporting
 	localIP, err := utility.GetLocalIP()
@@ -563,10 +536,10 @@ func runIngestor(args *serverArgs) error {
 	}
 
 	// Create context with timeout for graceful shutdown
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	ingestor.Stop(shutdownCtx)
+	ingestor.Stop()
 
 	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", *args.name))
 
@@ -596,7 +569,7 @@ func runSyncer(args *serverArgs) error {
 		"                           /____/    \n")
 
 	// Print RAGFlow version
-	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", common.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", utility.GetRAGFlowVersion()))
 
 	// Get local IP address for heartbeat reporting
 	localIP, err := utility.GetLocalIP()
@@ -648,14 +621,18 @@ func runSyncer(args *serverArgs) error {
 	return nil
 }
 
-func runAPI(ctx context.Context, args *serverArgs) error {
+func runAPI(args *serverArgs) error {
 	// Initialize admin status (default: unavailable=1)
 	local.InitAdminStatus(1, "admin server not connected")
 
 	// Initialize tokenizer (rag_analyzer)
-	// tokenizer.Init fills DictPath from env var or default, so
-	// tokenizerCfg.DictPath carries the resolved path for downstream use.
-	tokenizerCfg := &tokenizer.PoolConfig{}
+	dictPath := os.Getenv("RAGFLOW_DICT_PATH")
+	if dictPath == "" {
+		dictPath = "/usr/share/infinity/resource"
+	}
+	tokenizerCfg := &tokenizer.PoolConfig{
+		DictPath: dictPath,
+	}
 	if err := tokenizer.Init(tokenizerCfg); err != nil {
 		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
 	}
@@ -668,14 +645,14 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 	}
 
 	config := server.GetConfig()
-	startServer(ctx, config)
+	startServer(config)
 
 	common.Info("Server exited")
 
 	return nil
 }
 
-func startServer(ctx context.Context, config *server.Config) {
+func startServer(config *server.Config) {
 
 	// Set Gin mode
 	if config.Server.Mode == "release" {
@@ -686,8 +663,8 @@ func startServer(ctx context.Context, config *server.Config) {
 
 	// Initialize service layer
 	userService := service.NewUserService()
-	documentService := document.NewDocumentService()
-	datasetsService := dataset.NewDatasetService()
+	documentService := service.NewDocumentService()
+	datasetsService := service.NewDatasetService()
 	metadataService := service.NewMetadataService()
 	chunkService := chunk.NewChunkService()
 	llmService := service.NewLLMService()
@@ -698,18 +675,13 @@ func startServer(ctx context.Context, config *server.Config) {
 	chatSessionService := service.NewChatSessionService()
 	openaiChatService := service.NewOpenAIChatService()
 	systemService := service.NewSystemService()
-	statsService := service.NewStatsService()
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
 	searchService.SetTenantService(tenantService)
-	fileService := file.NewFileService(service.CheckFileTeamPermission, documentService)
+	fileService := service.NewFileService()
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
-
-	// Wire the real MemorySaver so the Message component can persist
-	// conversation turns to memory stores declared in the canvas DSL.
-	component.SetMemorySaver(service.NewMemorySaverAdapter(memoryService))
 
 	// Initialize doc engine for skill search
 	docEngine := engine.Get()
@@ -721,10 +693,9 @@ func startServer(ctx context.Context, config *server.Config) {
 	authHandler := handler.NewAuthHandler()
 	userHandler := handler.NewUserHandler(userService)
 	tenantHandler := handler.NewTenantHandler(tenantService, userService, datasetsService)
-	documentHandler := handler.NewDocumentHandler(documentService, datasetsService, fileService)
+	documentHandler := handler.NewDocumentHandler(documentService, datasetsService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
 	systemHandler := handler.NewSystemHandler(systemService)
-	statsHandler := handler.NewStatsHandler(statsService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
@@ -742,17 +713,17 @@ func startServer(ctx context.Context, config *server.Config) {
 	// (ragflow_retrieval, ragflow_list_datasets, ragflow_list_chats) to
 	// external AI clients via JSON-RPC over HTTP.
 	mcpServerHandler := handler.NewMCPServerHandler(
-		func(userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListDatasets(datasetsService, userID, page, pageSize, orderBy, desc)
+		func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+			return handler.MCPListDatasets(datasetsService, userID, page, pageSize, orderby, desc)
 		},
-		func(userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListChats(ctx, chatService, userID, page, pageSize, orderBy, desc)
+		func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+			return handler.MCPListChats(chatService, userID, page, pageSize, orderby, desc)
 		},
 		func(userID string, req mcp.RetrievalRequest) (string, error) {
 			return handler.MCPRetrieval(datasetsService, userID, req)
 		},
 	)
-	skillSearchHandler := handler.NewSkillSearchHandler(docEngine, documentService)
+	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 	// Install the agent service's Redis-backed run infrastructure
 	// (CheckPointStore / StateSerializer / RunTracker). When Redis
@@ -772,7 +743,7 @@ func startServer(ctx context.Context, config *server.Config) {
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
 	// api/v1/agentbots/...) and the agent attachment download.
-	// BotService delegates the agentBot completion to agentService so
+	// BotService delegates the agentbot completion to agentService so
 	// both paths share the same canvas runner. Reuse the llmService
 	// already constructed above (line 222) — do NOT redeclare with
 	// `:=` since the variable is in scope.
@@ -800,7 +771,7 @@ func startServer(ctx context.Context, config *server.Config) {
 	searchHandler.SetCompletionDependencies(modelProviderService, askService)
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
-	fileCommitHandler := handler.NewFileCommitHandler(file.NewFileCommitService())
+	fileCommitHandler := handler.NewFileCommitHandler(service.NewFileCommitService())
 
 	// Dify retrieval handler
 	docDAO := documentDAO
@@ -813,9 +784,24 @@ func startServer(ctx context.Context, config *server.Config) {
 		docDAO,
 		docEngine,
 	)
-	componentsSvc := service.NewComponentsService()
-	componentsHandler := handler.NewComponentsHandler(componentsSvc)
-	pipelineHandler := handler.NewPipelineHandler()
+	// Per-tenant canvas-runtime override selector, backed by the
+	// existing Redis client and the global logger. The handler is
+	// ALWAYS constructed, even when Redis is briefly unavailable at
+	// startup, so the POST /api/v1/admin/canvas-runtime/:tenant_id
+	// endpoint stays registered and returns the explicit
+	// ErrSelectorNotConfigured (HTTP 500) path until Redis recovers.
+	// Skipping handler construction when rdb == nil silently removed
+	// the route until the next process restart, so a transient
+	// Redis blip at boot stranded canary operators with a 404 they
+	// could not diagnose from the client side. Keep the route hot.
+	var adminRuntimeSelector *runtime.Selector
+	if redisClient := redis.Get(); redisClient != nil {
+		if rdb := redisClient.GetClient(); rdb != nil {
+			adminRuntimeSelector = runtime.NewSelector(rdb, common.Logger)
+		}
+	}
+	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
+	componentsHandler := handler.NewComponentsHandler(service.NewComponentsService())
 
 	// Initialize router
 	r := router.NewRouter(authHandler,
@@ -824,7 +810,6 @@ func startServer(ctx context.Context, config *server.Config) {
 		documentHandler,
 		datasetsHandler,
 		systemHandler,
-		statsHandler,
 		chunkHandler,
 		llmHandler,
 		chatHandler,
@@ -845,10 +830,10 @@ func startServer(ctx context.Context, config *server.Config) {
 		pluginHandler,
 		modelHandler,
 		fileCommitHandler,
+		adminRuntimeHandler,
 		openaiChatHandler,
 		botHandler,
-		componentsHandler,
-		pipelineHandler)
+		componentsHandler)
 
 	// Create Gin enginegit diff
 
@@ -884,7 +869,7 @@ func startServer(ctx context.Context, config *server.Config) {
 				"     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /\n" +
 				"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
 		)
-		common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
+		common.Info(fmt.Sprintf("RAGFlow Go Version: %s", utility.GetRAGFlowVersion()))
 		common.Info(fmt.Sprintf("Server starting on port: %d", config.Server.Port))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			common.Fatal("Failed to start server", zap.Error(err))

@@ -110,6 +110,12 @@ func TestFileComponent_Invoke_HappyPath(t *testing.T) {
 	if _, ok := out["binary"]; ok {
 		t.Fatalf("binary should not be emitted by File: %v", out["binary"])
 	}
+	if out["_elapsed_time"] == nil {
+		t.Error("_elapsed_time missing")
+	}
+	if out["_created_time"] == nil {
+		t.Error("_created_time missing")
+	}
 }
 
 func TestFileComponent_Invoke_ResolvesDocIDViaDocumentLocation(t *testing.T) {
@@ -290,5 +296,14 @@ func TestFileComponent_InputsOutputs_NonEmpty(t *testing.T) {
 		if _, ok := outs[key]; !ok {
 			t.Errorf("Outputs() missing %q", key)
 		}
+	}
+}
+
+// TestFileComponent_Parallelism asserts the fan-out is locked to
+// 1 — File is metadata-only and intentionally non-fanned-out.
+func TestFileComponent_Parallelism(t *testing.T) {
+	c := &FileComponent{}
+	if got := c.Parallelism(); got != 1 {
+		t.Errorf("Parallelism() = %d, want 1", got)
 	}
 }

@@ -12,10 +12,9 @@ import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { TFunction } from 'i18next';
 import {
-  Columns3Cog,
   LucideBox,
-  LucideLogOut,
   LucideMessagesSquare,
+  LucideLogOut,
   LucideServer,
   LucideUnplug,
   LucideUser,
@@ -46,11 +45,6 @@ const menuItems = (t: TFunction) => [
     icon: <IconFontFill name="mcp" className="size-[1em]" />,
     label: 'MCP',
     key: Routes.Mcp,
-  },
-  {
-    icon: <Columns3Cog className="size-[1em]" />,
-    label: t('setting.compilationTemplates'),
-    key: Routes.CompilationTemplates,
   },
   {
     icon: <LucideUsers className="size-[1em]" />,

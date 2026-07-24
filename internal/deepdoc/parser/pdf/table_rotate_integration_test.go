@@ -6,7 +6,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"ragflow/internal/common"
 	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -30,7 +29,7 @@ func TestTableRotation_Integration(t *testing.T) {
 		t.Skipf("test PDF not found: %s (run tools/generate_rotated_table_pdf.py first)", pdfPath)
 	}
 
-	baseURL := common.GetEnv(common.EnvDeepDocURL)
+	baseURL := os.Getenv("DEEPDOC_URL")
 	if baseURL == "" {
 		baseURL = "http://localhost:9390"
 	}
@@ -58,6 +57,7 @@ func TestTableRotation_Integration(t *testing.T) {
 	t.Logf("PDF: %d pages", pageCount)
 
 	cfg := pdf.DefaultParserConfig()
+	cfg.ToPage = pageCount - 1
 	autoRotate := true
 	cfg.AutoRotateTables = &autoRotate
 	_ = NewParser(cfg) // verify construction does not panic
@@ -127,7 +127,7 @@ func TestTableRotation_Integration(t *testing.T) {
 // TestTableRotation_Stability runs rotation detection on a sample real PDF
 // and verifies the pipeline doesn't crash. Set BATCH_COUNT to limit.
 func TestTableRotation_Stability(t *testing.T) {
-	baseURL := common.GetEnv(common.EnvDeepDocURL)
+	baseURL := os.Getenv("DEEPDOC_URL")
 	if baseURL == "" {
 		baseURL = "http://localhost:9390"
 	}

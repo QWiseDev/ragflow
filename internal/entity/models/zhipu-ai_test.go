@@ -9,7 +9,6 @@ import (
 )
 
 func TestZhipuAIOCRFileSendsLayoutParsingRequest(t *testing.T) {
-	ctx := t.Context()
 	apiKey := "test-key"
 	modelName := "glm-ocr"
 	fileURL := "https://example.com/doc.png"
@@ -53,7 +52,7 @@ func TestZhipuAIOCRFileSendsLayoutParsingRequest(t *testing.T) {
 	defer server.Close()
 
 	model := NewZhipuAIModel(map[string]string{"default": server.URL}, URLSuffix{OCR: "layout_parsing"})
-	resp, err := model.OCRFile(ctx, &modelName, nil, &fileURL, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	resp, err := model.OCRFile(&modelName, nil, &fileURL, &APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		t.Fatalf("OCRFile returned error: %v", err)
 	}
@@ -63,7 +62,6 @@ func TestZhipuAIOCRFileSendsLayoutParsingRequest(t *testing.T) {
 }
 
 func TestZhipuAIOCRFileEncodesContent(t *testing.T) {
-	ctx := t.Context()
 	apiKey := "test-key"
 	modelName := "glm-ocr"
 	content := []byte("sample image bytes")
@@ -83,13 +81,12 @@ func TestZhipuAIOCRFileEncodesContent(t *testing.T) {
 	defer server.Close()
 
 	model := NewZhipuAIModel(map[string]string{"default": server.URL}, URLSuffix{OCR: "layout_parsing"})
-	if _, err := model.OCRFile(ctx, &modelName, content, nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+	if _, err := model.OCRFile(&modelName, content, nil, &APIConfig{ApiKey: &apiKey}, nil); err != nil {
 		t.Fatalf("OCRFile returned error: %v", err)
 	}
 }
 
 func TestZhipuAIOCRFileDetectsPDFContent(t *testing.T) {
-	ctx := t.Context()
 	apiKey := "test-key"
 	modelName := "glm-ocr"
 	content := []byte("%PDF-1.7 sample")
@@ -109,13 +106,12 @@ func TestZhipuAIOCRFileDetectsPDFContent(t *testing.T) {
 	defer server.Close()
 
 	model := NewZhipuAIModel(map[string]string{"default": server.URL}, URLSuffix{OCR: "layout_parsing"})
-	if _, err := model.OCRFile(ctx, &modelName, content, nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+	if _, err := model.OCRFile(&modelName, content, nil, &APIConfig{ApiKey: &apiKey}, nil); err != nil {
 		t.Fatalf("OCRFile returned error: %v", err)
 	}
 }
 
 func TestZhipuAIOCRFileValidation(t *testing.T) {
-	ctx := t.Context()
 	apiKey := "test-key"
 	modelName := "glm-ocr"
 	fileURL := "https://example.com/doc.png"
@@ -153,7 +149,7 @@ func TestZhipuAIOCRFileValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := model.OCRFile(ctx, tt.modelName, nil, tt.fileURL, tt.apiConfig, nil, nil)
+			_, err := model.OCRFile(tt.modelName, nil, tt.fileURL, tt.apiConfig, nil)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want containing %q", err, tt.want)
 			}

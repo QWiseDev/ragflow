@@ -10,6 +10,7 @@ import doctype "ragflow/internal/deepdoc/parser/type"
 type PipelineMetrics = doctype.PipelineMetrics
 type ParseResult = doctype.ParseResult
 type DLAPageRegions = doctype.DLAPageRegions
+type TSRRawCell = doctype.TSRRawCell
 type TextChar = doctype.TextChar
 type TextBox = doctype.TextBox
 type Position = doctype.Position

@@ -24,12 +24,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ModelHandler ProviderHandler provider handler
+// ProviderHandler provider handler
 type ModelHandler struct {
 	modelProviderService *service.ModelProviderService
 }
 
-// NewModelHandler NewProviderHandler create provider handler
+// NewProviderHandler create provider handler
 func NewModelHandler(modelProviderService *service.ModelProviderService) *ModelHandler {
 	return &ModelHandler{
 		modelProviderService: modelProviderService,
@@ -66,17 +66,17 @@ func (h *ModelHandler) ListAllModels(c *gin.Context) {
 func (h *ModelHandler) ShowModel(c *gin.Context) {
 	encodedModelName := c.Param("model_name")
 	if encodedModelName == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Encoded model name is empty")
+		common.ErrorWithCode(c, 400, "Encoded model name is empty")
 		return
 	}
 
 	decodedModelName, err := common.DecodeFromBase64(encodedModelName)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if decodedModelName == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Decoded model name is empty")
+		common.ErrorWithCode(c, 400, "Decoded model name is empty")
 		return
 	}
 

@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/form';
 import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { IAddedModel } from '@/interfaces/database/llm';
-import { buildModelValue, getRealModelName } from '@/utils/llm-util';
+import { getRealModelName } from '@/utils/llm-util';
 import { useCallback, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -17,10 +17,10 @@ import { TreeSelect, TreeSelectNode } from './tree-select';
 
 /** Maps form field names to their supported model types */
 export const ModelTypeMap: Record<string, string[]> = {
-  llm_id: ['chat', 'vision'],
+  llm_id: ['chat', 'image2text'],
   embd_id: ['embedding'],
-  img2txt_id: ['vision'],
-  asr_id: ['asr'],
+  img2txt_id: ['image2text'],
+  asr_id: ['speech2text'],
   rerank_id: ['rerank'],
   tts_id: ['tts'],
 };
@@ -62,14 +62,7 @@ export function buildModelTree(
       title: instance,
       children: models.reduce<TreeSelectNode[]>((acc, m) => {
         const modelName = getRealModelName(m.name);
-
-        const id =
-          m.model_id ||
-          buildModelValue({
-            model_name: modelName,
-            model_instance: m.instance_name,
-            model_provider: m.provider_name,
-          });
+        const id = `${modelName}@${m.instance_name}@${m.provider_name}`;
         if (seenLeafIds.has(id)) return acc;
         seenLeafIds.add(id);
         const leafNode: TreeSelectNode = {
@@ -113,7 +106,6 @@ export interface ModelTreeSelectProps {
   className?: string;
   renderSelected?: (node: TreeSelectNode | undefined) => React.ReactNode;
   testId?: string;
-  ownerTenantId?: string;
 }
 
 export function ModelTreeSelect({
@@ -127,58 +119,18 @@ export function ModelTreeSelect({
   className,
   renderSelected,
   testId,
-  ownerTenantId,
 }: ModelTreeSelectProps) {
-  const { data: allAddedModels } = useFetchAllAddedModels(
-    undefined,
-    ownerTenantId,
-  );
+  const { data: allAddedModels } = useFetchAllAddedModels();
 
   const treeData = useMemo(
     () => buildModelTree(allAddedModels, modelTypes),
     [allAddedModels, modelTypes],
   );
 
-  // Backward compatibility: map legacy concatenated ids
-  // ("modelName@instanceName@providerName") to new model_id-based ids so
-  // that previously persisted values still display correctly.
-  const legacyIdMap = useMemo(() => {
-    const map = new Map<string, string>();
-    const walk = (nodes: TreeSelectNode[]) => {
-      for (const node of nodes) {
-        if (node.children?.length) {
-          walk(node.children);
-        } else if (node.data) {
-          const legacyId = buildModelValue({
-            model_name: node.data.model_name,
-            model_instance: node.data.instance_name,
-            model_provider: node.data.provider_name,
-          });
-          map.set(legacyId, node.id);
-        }
-      }
-    };
-    walk(treeData);
-    return map;
-  }, [treeData]);
-
-  const normalizedValue = useMemo(() => {
-    if (!value) return value;
-    return legacyIdMap.get(value) ?? value;
-  }, [value, legacyIdMap]);
-
   const defaultRenderSelected = useCallback(
     (node: TreeSelectNode | undefined) => {
-      if (!node?.data) return null;
-      return (
-        <LLMLabel
-          value={buildModelValue({
-            model_name: node.data.model_name,
-            model_instance: node.data.instance_name,
-            model_provider: node.data.provider_name,
-          })}
-        />
-      );
+      if (!node?.id) return null;
+      return <LLMLabel value={node.id} />;
     },
     [],
   );
@@ -186,7 +138,7 @@ export function ModelTreeSelect({
   return (
     <TreeSelect
       data={treeData}
-      value={normalizedValue}
+      value={value}
       onChange={onChange}
       placeholder={placeholder}
       disabled={disabled}
@@ -204,14 +156,12 @@ export interface ModelTreeSelectFormFieldProps extends ModelTreeSelectProps {
   name?: string;
   label?: string;
   tooltip?: string;
-  required?: boolean;
 }
 
 export function ModelTreeSelectFormField({
   name = 'llm_id',
   label,
   tooltip,
-  required,
   ...rest
 }: ModelTreeSelectFormFieldProps) {
   const form = useFormContext();
@@ -223,11 +173,7 @@ export function ModelTreeSelectFormField({
       name={name}
       render={({ field }) => (
         <FormItem>
-          {label && (
-            <FormLabel required={required} tooltip={tooltip}>
-              {label}
-            </FormLabel>
-          )}
+          {label && <FormLabel tooltip={tooltip}>{label}</FormLabel>}
           <FormControl>
             <ModelTreeSelect
               {...rest}

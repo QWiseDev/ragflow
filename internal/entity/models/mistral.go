@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/common"
 	"strings"
 	"time"
 )
@@ -55,7 +54,7 @@ func (m *MistralModel) Name() string {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
-func (m *MistralModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (m *MistralModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -70,14 +69,45 @@ func (m *MistralModel) ChatWithMessages(ctx context.Context, modelName string, m
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
+	reqBody := map[string]interface{}{
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   false,
+	}
+
+	// Note: do NOT propagate chatModelConfig.Stream into the request body
+	// here. ChatWithMessages parses a single JSON response, so stream must
+	// always be off for this code path.
+	if chatModelConfig != nil {
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		}
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
+		}
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
+		}
+		if chatModelConfig.Stop != nil {
+			reqBody["stop"] = *chatModelConfig.Stop
+		}
+	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -177,7 +207,7 @@ func extractMistralContent(raw interface{}) (string, string, error) {
 }
 
 // ChatStreamlyWithSender sends messages and streams the response
-func (m *MistralModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (m *MistralModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -189,9 +219,6 @@ func (m *MistralModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-	if err := validateStreamConfig(chatModelConfig); err != nil {
-		return err
-	}
 
 	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -199,14 +226,46 @@ func (m *MistralModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
+	reqBody := map[string]interface{}{
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   true,
+	}
+
+	if chatModelConfig != nil {
+		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
+			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
+		}
+
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		}
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
+		}
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
+		}
+		if chatModelConfig.Stop != nil {
+			reqBody["stop"] = *chatModelConfig.Stop
+		}
+	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -283,7 +342,7 @@ type mistralEmbeddingResponse struct {
 }
 
 // Embed turns a list of texts into embedding vectors
-func (m *MistralModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (m *MistralModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -316,7 +375,7 @@ func (m *MistralModel) Embed(ctx context.Context, modelName *string, texts []str
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -372,7 +431,7 @@ func (m *MistralModel) Embed(ctx context.Context, modelName *string, texts []str
 }
 
 // ListModels returns the list of model ids visible to the API key.
-func (m *MistralModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (m *MistralModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -384,7 +443,7 @@ func (m *MistralModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -422,13 +481,13 @@ func (m *MistralModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 }
 
 // Balance is not exposed by the Mistral API, so this returns "no such method".
-func (m *MistralModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
+func (m *MistralModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
 // CheckConnection runs a lightweight ListModels call to verify the API key.
-func (m *MistralModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	_, err := m.ListModels(ctx, apiConfig)
+func (m *MistralModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := m.ListModels(apiConfig)
 	if err != nil {
 		return err
 	}
@@ -436,30 +495,30 @@ func (m *MistralModel) CheckConnection(ctx context.Context, apiConfig *APIConfig
 }
 
 // Rerank calculates similarity scores between query and documents
-func (m *MistralModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (m *MistralModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
 // TranscribeAudio transcribe audio
-func (m *MistralModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+func (m *MistralModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
-func (m *MistralModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (m *MistralModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", m.Name())
 }
 
 // AudioSpeech convert text to audio
-func (m *MistralModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+func (m *MistralModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
-func (m *MistralModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (m *MistralModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", m.Name())
 }
 
 // OCRFile OCR file
-func (m *MistralModel) OCRFile(ctx context.Context, modelName *string, content []byte, urls *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (m *MistralModel) OCRFile(modelName *string, content []byte, urls *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -496,7 +555,7 @@ func (m *MistralModel) OCRFile(ctx context.Context, modelName *string, content [
 		return nil, fmt.Errorf("failed to marshal json payload: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -546,14 +605,14 @@ func (m *MistralModel) OCRFile(ctx context.Context, modelName *string, content [
 	}, nil
 }
 
-func (m *MistralModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (m *MistralModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
-func (m *MistralModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (m *MistralModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
-func (m *MistralModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (m *MistralModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }

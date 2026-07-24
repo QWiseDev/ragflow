@@ -14,17 +14,25 @@ import {
 } from '@/components/file-upload';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { CircleStop, Globe, Paperclip, Send, Upload, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { t } from 'i18next';
+import {
+  Atom,
+  CircleStop,
+  Globe,
+  Paperclip,
+  Send,
+  Upload,
+  X,
+} from 'lucide-react';
 import * as React from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { SelectWithSearch } from '../originui/select-with-search';
 import { AudioButton } from '../ui/audio-button';
 
 export type NextMessageInputOnPressEnterParameter = {
-  enableThinking?: string;
-  enableInternet?: boolean;
+  enableThinking: boolean;
+  enableInternet: boolean;
 };
 
 interface NextMessageInputProps {
@@ -67,44 +75,16 @@ export function NextMessageInput({
   showReasoning = false,
   showInternet = false,
 }: NextMessageInputProps) {
-  const { t } = useTranslation();
   const [files, setFiles] = React.useState<File[]>([]);
   const [audioInputValue, setAudioInputValue] = React.useState<string | null>(
     null,
   );
 
-  const [enableThinking, setEnableThinking] = useState('0');
+  const [enableThinking, setEnableThinking] = useState(false);
   const [enableInternet, setEnableInternet] = useState(false);
 
-  const thinkingOptions = useMemo(
-    () => [
-      {
-        label: t('chat.thinkingLevelUltra'),
-        value: '4',
-        description: t('chat.thinkingLevelUltraDescription'),
-      },
-      {
-        label: t('chat.thinkingLevelHigh'),
-        value: '3',
-        description: t('chat.thinkingLevelHighDescription'),
-      },
-      {
-        label: t('chat.thinkingLevelMedium'),
-        value: '2',
-        description: t('chat.thinkingLevelMediumDescription'),
-      },
-      {
-        label: t('chat.thinkingLevelLow'),
-        value: '1',
-        description: t('chat.thinkingLevelLowDescription'),
-      },
-      { label: t('chat.thinkingLevelNone'), value: '0' },
-    ],
-    [t],
-  );
-
-  const handleThinkingChange = useCallback((value: string) => {
-    setEnableThinking(value);
+  const handleThinkingToggle = useCallback(() => {
+    setEnableThinking((prev) => !prev);
   }, []);
 
   const handleInternetToggle = useCallback(() => {
@@ -146,10 +126,10 @@ export function NextMessageInput({
   }, []);
 
   const submit = React.useCallback(() => {
-    if (isUploading || sendLoading) return;
+    if (isUploading) return;
     pressEnter();
     setFiles([]);
-  }, [isUploading, sendLoading, pressEnter]);
+  }, [isUploading, pressEnter]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -242,7 +222,6 @@ export function NextMessageInput({
           "
           disabled={isUploading || disabled || sendLoading}
           onKeyDown={handleKeyDown}
-          resize={resize}
           autoSize={{ minRows: 2, maxRows: 8 }}
         />
 
@@ -265,13 +244,19 @@ export function NextMessageInput({
             )}
 
             {showReasoning && (
-              <SelectWithSearch
-                value={enableThinking}
-                options={thinkingOptions}
-                onChange={handleThinkingChange}
-                triggerClassName="h-7 border-0 !bg-bg-card text-sm"
-                testId="chat-detail-thinking-toggle"
-              />
+              <Button
+                type="button"
+                size="sm"
+                variant={'outline'}
+                className={cn('border-0 h-7 text-sm bg-bg-card', {
+                  'bg-text-primary text-bg-base': enableThinking,
+                })}
+                onClick={handleThinkingToggle}
+                data-testid="chat-detail-thinking-toggle"
+              >
+                <Atom />
+                <span>Thinking</span>
+              </Button>
             )}
 
             {showInternet && (

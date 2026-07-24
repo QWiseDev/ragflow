@@ -6,7 +6,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"strings"
 	"testing"
@@ -25,7 +24,7 @@ func TestDumpTextOutput(t *testing.T) {
 	}
 
 	count := len(entries)
-	if n := common.GetEnv(common.EnvDumpCount); n != "" {
+	if n := os.Getenv("DUMP_COUNT"); n != "" {
 		c := 0
 		for _, ch := range n {
 			c = c*10 + int(ch-'0')

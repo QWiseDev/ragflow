@@ -58,7 +58,6 @@ export function UploadAgentForm({ hideModal, onOk }: IModalProps<any>) {
                   value={field.value}
                   onValueChange={field.onChange}
                   maxFileCount={1}
-                  showFolderTab={false}
                   accept={{ '*.json': [FileMimeType.Json] }}
                 />
               </FormControl>

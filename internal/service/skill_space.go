@@ -23,7 +23,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
-	"ragflow/internal/service/file"
 	"ragflow/internal/utility"
 	"sync"
 	"time"
@@ -35,7 +34,7 @@ import (
 type SkillSpaceService struct {
 	spaceDAO             *dao.SkillSpaceDAO
 	fileDAO              *dao.FileDAO
-	fileService          *file.FileService
+	fileService          *FileService
 	configDAO            *dao.SkillSearchConfigDAO
 	tenantDAO            *dao.TenantDAO
 	skillsFolderCache    map[string]string // tenant-keyed cache for skills folder ID
@@ -44,13 +43,12 @@ type SkillSpaceService struct {
 	spaceCreateMu        sync.Map          // tenant-scoped locks for space creation (prevents TOCTOU races)
 }
 
-// NewSkillSpaceService creates a new SkillSpaceService instance.
-// dr is the document remover used when deleting files; it must be non-nil.
-func NewSkillSpaceService(dr file.DocRemover) *SkillSpaceService {
+// NewSkillSpaceService creates a new SkillSpaceService instance
+func NewSkillSpaceService() *SkillSpaceService {
 	return &SkillSpaceService{
 		spaceDAO:          dao.NewSkillSpaceDAO(),
 		fileDAO:           dao.NewFileDAO(),
-		fileService:       file.NewFileService(CheckFileTeamPermission, dr),
+		fileService:       NewFileService(),
 		configDAO:         dao.NewSkillSearchConfigDAO(),
 		tenantDAO:         dao.NewTenantDAO(),
 		skillsFolderCache: make(map[string]string),

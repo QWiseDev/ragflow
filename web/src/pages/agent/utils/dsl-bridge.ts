@@ -30,7 +30,7 @@
 
 import { Edge } from '@xyflow/react';
 
-import { EmptyDsl, Operator } from '@/constants/agent';
+import { DataflowOperator, EmptyDsl, Operator } from '@/constants/agent';
 import {
   DSL,
   DSLComponents,
@@ -227,7 +227,10 @@ export const inferIsAgentFromImport = (raw: Record<string, any>): boolean => {
   const graph = raw?.graph;
   if (graph && Array.isArray(graph.nodes)) {
     const labels = (graph.nodes as any[]).map((n: any) => n?.data?.label);
-    if (labels.includes(Operator.File) && labels.includes(Operator.Parser)) {
+    if (
+      labels.includes(DataflowOperator.Begin) &&
+      labels.includes(DataflowOperator.Parser)
+    ) {
       return false;
     }
     return true;

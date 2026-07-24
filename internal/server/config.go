@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/mail"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -51,10 +52,8 @@ type Config struct {
 	UserDefaultLLM   UserDefaultLLMConfig   `mapstructure:"user_default_llm"`
 	DefaultSuperUser DefaultSuperUser       `mapstructure:"default_super_user"`
 	Language         string                 `mapstructure:"language"`
-	Ingestor         IngestorConfig         `mapstructure:"ingestor"`
+	TaskExecutor     TaskExecutorConfig     `mapstructure:"task_executor"`
 	FileSyncer       FileSyncerConfig       `mapstructure:"file_syncer"`
-	OTel             OtelConfig             `mapstructure:"otel"`
-	Clickhouse       ClickhouseConfig       `mapstructure:"clickhouse"`
 }
 
 // AdminConfig admin server configuration
@@ -74,10 +73,6 @@ type DefaultSuperUser struct {
 	Nickname string `mapstructure:"nickname"`
 }
 
-type IngestorConfig struct {
-	MQType string `mapstructure:"mq_type"`
-}
-
 type TaskExecutorConfig struct {
 	MessageQueueType string `mapstructure:"message_queue_type"`
 }
@@ -87,23 +82,7 @@ type FileSyncerConfig struct {
 	SyncInterval       int `mapstructure:"sync_interval"`
 }
 
-type OtelConfig struct {
-	Host        string  `mapstructure:"host"`
-	Port        int     `mapstructure:"port"`
-	SampleRatio float64 `mapstructure:"sample_ratio"`
-	Secure      bool    `mapstructure:"secure"`
-	Stdout      bool    `mapstructure:"stdout"`
-	Enable      bool    `mapstructure:"enable"`
-}
-
-type ClickhouseConfig struct {
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	User     string `mapstructure:"user"`
-	Password string `mapstructure:"password"`
-	Database string `mapstructure:"database"`
-}
-
+// UserDefaultLLMConfig user default LLM configuration
 type UserDefaultLLMConfig struct {
 	DefaultModels DefaultModelsConfig `mapstructure:"default_models"`
 }
@@ -231,14 +210,12 @@ type StorageConfig struct {
 	Minio *MinioConfig `mapstructure:"minio"`
 	S3    *S3Config    `mapstructure:"s3"`
 	OSS   *OSSConfig   `mapstructure:"oss"`
-	GCS   *GCSConfig   `mapstructure:"gcs"`
 }
 
 const (
 	StorageOSS   StorageType = "oss"
 	StorageS3    StorageType = "s3"
 	StorageMinio StorageType = "minio"
-	StorageGCS   StorageType = "gcs"
 )
 
 // OSSConfig holds Aliyun OSS storage configuration
@@ -252,12 +229,6 @@ type OSSConfig struct {
 	PrefixPath       string `mapstructure:"prefix_path"`       // Path prefix (optional)
 	SignatureVersion string `mapstructure:"signature_version"` // Signature version
 	AddressingStyle  string `mapstructure:"addressing_style"`  // Addressing style
-}
-
-type GCSConfig struct {
-	Bucket      string `mapstructure:"bucket"`       // Default bucket (optional)
-	PrefixPath  string `mapstructure:"prefix_path"`  // Path prefix (optional)
-	EndpointURL string `mapstructure:"endpoint_url"` // Custom endpoint (optional)
 }
 
 // MinioConfig holds MinIO storage configuration
@@ -402,7 +373,7 @@ func Init(configPath string) error {
 			configDict["name"] = "redis"
 			configDict["host"] = host
 			configDict["port"] = port
-			configDict["service_type"] = "cache"
+			configDict["service_type"] = "message_queue"
 			configDict["extra"] = map[string]interface{}{
 				"mq_type":  "redis",
 				"database": db,
@@ -430,27 +401,23 @@ func Init(configPath string) error {
 			delete(configDict, "max_allowed_packet")
 			delete(configDict, "user")
 			delete(configDict, "password")
-		case "ingestor":
-			mqType := getString(configDict, "mq_type")
+		case "task_executor":
+			mqType := getString(configDict, "message_queue_type")
 			configDict["id"] = id
-			configDict["name"] = "ingestor"
-			configDict["service_type"] = "ingestor"
+			configDict["name"] = "task_executor"
+			configDict["service_type"] = "task_executor"
 			configDict["extra"] = map[string]interface{}{
 				"message_queue_type": mqType,
 			}
 			delete(configDict, "message_queue_type")
 		case "nats":
+			host := getString(configDict, "host")
+			port := getInt(configDict, "port")
 			configDict["id"] = id
 			configDict["name"] = "nats"
+			configDict["host"] = host
+			configDict["port"] = port
 			configDict["service_type"] = "message_queue"
-		case "otel":
-			configDict["id"] = id
-			configDict["name"] = "jaeger"
-			configDict["service_type"] = "tracing"
-		case "clickhouse":
-			configDict["id"] = id
-			configDict["name"] = "clickhouse"
-			configDict["service_type"] = "olap"
 		case "admin":
 			// Skip admin section
 			continue
@@ -478,12 +445,12 @@ func Init(configPath string) error {
 
 func FromEnvironments() error {
 	// Secret key
-	if envVal := common.GetEnv(common.EnvRAGFlowSecretKey); envVal != "" {
+	if envVal := os.Getenv("RAGFLOW_SECRET_KEY"); envVal != "" {
 		globalConfig.Server.SecretKey = &envVal
 	}
 
 	// Load REGISTER_ENABLED from environment variable (default: true)
-	if envVal := common.GetEnv(common.EnvRegisterEnabled); envVal != "" {
+	if envVal := os.Getenv("REGISTER_ENABLED"); envVal != "" {
 		str := strings.ToLower(envVal)
 		if str == "true" || str == "1" || str == "yes" {
 			globalConfig.Authentication.RegisterEnabled = true
@@ -493,7 +460,7 @@ func FromEnvironments() error {
 	}
 
 	// Load DISABLE_PASSWORD_LOGIN from environment variable (default: false)
-	if envVal := common.GetEnv(common.EnvDisablePasswordLogin); envVal != "" {
+	if envVal := os.Getenv("DISABLE_PASSWORD_LOGIN"); envVal != "" {
 		str := strings.ToLower(envVal)
 		if str == "true" || str == "1" || str == "yes" {
 			globalConfig.Authentication.DisablePasswordLogin = true
@@ -503,7 +470,7 @@ func FromEnvironments() error {
 	}
 
 	// Doc engine
-	docEngine := common.GetEnvSmall(common.EnvDocEngine)
+	docEngine := strings.ToLower(os.Getenv("DOC_ENGINE"))
 	switch docEngine {
 	case "infinity":
 		globalConfig.DocEngine.Type = EngineInfinity
@@ -523,7 +490,7 @@ func FromEnvironments() error {
 
 	// Default super user email
 	globalConfig.DefaultSuperUser.Email = "admin@ragflow.io"
-	superUserEmail := common.GetEnv(common.EnvDefaultSuperuserEmail)
+	superUserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
 	if superUserEmail != "" {
 		_, err := mail.ParseAddress(superUserEmail)
 		if err != nil {
@@ -533,19 +500,19 @@ func FromEnvironments() error {
 	}
 
 	globalConfig.DefaultSuperUser.Password = "admin"
-	superUserPassword := common.GetEnv(common.EnvDefaultSuperuserPassword)
+	superUserPassword := os.Getenv("DEFAULT_SUPERUSER_PASSWORD")
 	if superUserPassword != "" {
 		globalConfig.DefaultSuperUser.Password = superUserPassword
 	}
 
 	globalConfig.DefaultSuperUser.Nickname = "admin"
-	superUserNickname := common.GetEnv(common.EnvDefaultSuperuserNickname)
+	superUserNickname := os.Getenv("DEFAULT_SUPERUSER_NICKNAME")
 	if superUserNickname != "" {
 		globalConfig.DefaultSuperUser.Nickname = superUserNickname
 	}
 
 	// Meta database
-	databaseType := common.GetEnvSmall(common.EnvDBType)
+	databaseType := strings.ToLower(os.Getenv("DB_TYPE"))
 	switch databaseType {
 	case "mysql":
 		globalConfig.Database.Driver = "mysql"
@@ -559,7 +526,7 @@ func FromEnvironments() error {
 	}
 
 	// Storage
-	storageType := common.GetEnvSmall(common.EnvStorageImpl)
+	storageType := strings.ToLower(os.Getenv("STORAGE_IMPL"))
 	switch storageType {
 	case "minio":
 		globalConfig.StorageEngine.Type = StorageMinio
@@ -567,8 +534,6 @@ func FromEnvironments() error {
 		globalConfig.StorageEngine.Type = StorageS3
 	case "oss":
 		globalConfig.StorageEngine.Type = StorageOSS
-	case "gcs":
-		globalConfig.StorageEngine.Type = StorageGCS
 	case "":
 		// Default
 		if globalConfig.StorageEngine.Type == "" {
@@ -579,12 +544,32 @@ func FromEnvironments() error {
 	}
 
 	// Minio
-	minioHost := strings.ToLower(common.GetEnv(common.EnvMinioHost))
-	if minioHost != "" {
-		globalConfig.StorageEngine.Minio.Host = minioEndpoint(minioHost, globalConfig.StorageEngine.Minio.Host)
+	minioIP := strings.ToLower(os.Getenv("MINIO_IP"))
+	if minioIP != "" {
+		if globalConfig.StorageEngine.Minio == nil {
+			return fmt.Errorf("Minio config not found")
+		}
+		_, port, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
+		if err != nil {
+			return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
+		}
+		globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", minioIP, port)
 	}
 
-	minioRegion := strings.ToLower(common.GetEnv(common.EnvMinioRegion))
+	//minioPort := strings.ToLower(os.Getenv("MINIO_PORT"))
+	//// println(fmt.Sprintf("MINIO ip and port from env: %s:%s", minioIP, minioPort))
+	//if minioPort != "" {
+	//	if globalConfig.StorageEngine.Minio == nil {
+	//		return fmt.Errorf("Minio config not found")
+	//	}
+	//	ip, _, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
+	//	if err != nil {
+	//		return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
+	//	}
+	//	globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", ip, minioPort)
+	//}
+
+	minioRegion := strings.ToLower(os.Getenv("MINIO_REGION"))
 	if minioRegion != "" {
 		if globalConfig.StorageEngine.Minio == nil {
 			return fmt.Errorf("Minio config not found")
@@ -598,19 +583,6 @@ func FromEnvironments() error {
 	}
 
 	return nil
-}
-
-func minioEndpoint(host, configuredEndpoint string) string {
-	if _, _, err := net.SplitHostPort(host); err == nil {
-		return host
-	}
-
-	port := "9000"
-	if _, configuredPort, err := net.SplitHostPort(configuredEndpoint); err == nil && configuredPort != "" {
-		port = configuredPort
-	}
-
-	return net.JoinHostPort(strings.Trim(host, "[]"), port)
 }
 
 func FromConfigFile(configPath string) error {
@@ -816,19 +788,6 @@ func FromConfigFile(configPath string) error {
 			}
 		}
 
-		if v.IsSet("gcs") {
-			gcsConfig := v.Sub("gcs")
-			if gcsConfig != nil {
-				if globalConfig.StorageEngine.GCS == nil {
-					globalConfig.StorageEngine.GCS = &GCSConfig{
-						Bucket:      gcsConfig.GetString("bucket"),
-						PrefixPath:  gcsConfig.GetString("prefix_path"),
-						EndpointURL: gcsConfig.GetString("endpoint_url"),
-					}
-				}
-			}
-		}
-
 		if v.IsSet("minio_0") {
 			minioConfig := v.Sub("minio_0")
 			if minioConfig != nil {
@@ -1004,9 +963,9 @@ func getInt(m map[string]interface{}, key string) int {
 }
 
 func GetLanguage() string {
-	lang := common.GetEnv(common.EnvLang)
+	lang := os.Getenv("LANG")
 	if lang == "" {
-		lang = common.GetEnv(common.EnvLanguage)
+		lang = os.Getenv("LANGUAGE")
 	}
 
 	lang = strings.ToLower(lang)

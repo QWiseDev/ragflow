@@ -49,7 +49,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"ragflow/internal/common"
 	"strings"
 	"sync"
 	"syscall"
@@ -117,14 +116,14 @@ func newLocalProviderFromEnv() *LocalProvider {
 // vars, mirroring the admin-panel settings JSON shape.
 func localConfigFromEnv() map[string]any {
 	return map[string]any{
-		"PYTHON_BIN":         common.GetEnv(common.EnvLocalPythonBin),
-		"NODE_BIN":           common.GetEnv(common.EnvLocalNodeBin),
-		"WORK_DIR":           common.GetEnv(common.EnvLocalWorkDir),
-		"TIMEOUT":            common.GetEnv(common.EnvLocalTimeout),
-		"MAX_MEMORY_MB":      common.GetEnv(common.EnvLocalMaxMemoryMB),
-		"MAX_OUTPUT_BYTES":   common.GetEnv(common.EnvLocalMaxOutputBytes),
-		"MAX_ARTIFACTS":      common.GetEnv(common.EnvLocalMaxArtifacts),
-		"MAX_ARTIFACT_BYTES": common.GetEnv(common.EnvLocalMaxArtifactBytes),
+		"PYTHON_BIN":         os.Getenv("LOCAL_PYTHON_BIN"),
+		"NODE_BIN":           os.Getenv("LOCAL_NODE_BIN"),
+		"WORK_DIR":           os.Getenv("LOCAL_WORK_DIR"),
+		"TIMEOUT":            os.Getenv("LOCAL_TIMEOUT"),
+		"MAX_MEMORY_MB":      os.Getenv("LOCAL_MAX_MEMORY_MB"),
+		"MAX_OUTPUT_BYTES":   os.Getenv("LOCAL_MAX_OUTPUT_BYTES"),
+		"MAX_ARTIFACTS":      os.Getenv("LOCAL_MAX_ARTIFACTS"),
+		"MAX_ARTIFACT_BYTES": os.Getenv("LOCAL_MAX_ARTIFACT_BYTES"),
 	}
 }
 
@@ -463,19 +462,19 @@ func buildLocalChildEnv(instanceDir string) []string {
 	}
 	// Append the host PATH so the subprocess can find shared
 	// libs and helper binaries.
-	if path := common.GetEnv(common.EnvPath); path != "" {
+	if path := os.Getenv("PATH"); path != "" {
 		env = append(env, "PATH="+path)
 	}
 	// Append thread-related vars from the host so libraries
 	// that honor them (OpenMP, MKL, etc.) behave the same.
 	for _, name := range []string{
-		common.EnvOMPNumThreads,
-		common.EnvOpenBLASNumThreads,
-		common.EnvMKLNumThreads,
-		common.EnvVECLIBMaximumThreads,
-		common.EnvNumEXPRNumThreads,
+		"OMP_NUM_THREADS",
+		"OPENBLAS_NUM_THREADS",
+		"MKL_NUM_THREADS",
+		"VECLIB_MAXIMUM_THREADS",
+		"NUMEXPR_NUM_THREADS",
 	} {
-		if v := common.GetEnv(name); v != "" {
+		if v := os.Getenv(name); v != "" {
 			env = append(env, name+"="+v)
 		}
 	}
@@ -580,7 +579,7 @@ func statusFromExitCode(code int) string {
 
 // envOr returns the value of the env var, or fallback if unset.
 func envOr(key, fallback string) string {
-	if v := common.GetEnv(key); v != "" {
+	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return fallback
@@ -589,7 +588,7 @@ func envOr(key, fallback string) string {
 // envIntOr returns the env var parsed as int, or fallback if
 // unset / unparseable.
 func envIntOr(key string, fallback int) int {
-	if v := common.GetEnv(key); v != "" {
+	if v := os.Getenv(key); v != "" {
 		var n int
 		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 {
 			return n

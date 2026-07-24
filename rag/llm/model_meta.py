@@ -93,9 +93,9 @@ class VolcEngine(Base):
                 if "embeddings" in output_modalities:
                     model_types.append(LLMType.EMBEDDING.value)
                 if "image" in input_modalities and "text" in output_modalities:
-                    model_types.append(LLMType.VISION.value)
+                    model_types.append(LLMType.IMAGE2TEXT.value)
                 if "audio" in input_modalities and "text" in output_modalities:
-                    model_types.append(LLMType.ASR.value)
+                    model_types.append(LLMType.SPEECH2TEXT.value)
                 if "audio" in output_modalities:
                     model_types.append(LLMType.TTS.value)
 
@@ -138,7 +138,7 @@ class Ollama(Base):
                 if not models:
                     return []
             res = []
-            capability_to_model_type_mapping = {"completion": LLMType.CHAT.value, "vision": LLMType.VISION.value, "embedding": LLMType.EMBEDDING.value}
+            capability_to_model_type_mapping = {"completion": LLMType.CHAT.value, "vision": LLMType.IMAGE2TEXT.value, "embedding": LLMType.EMBEDDING.value}
             capability_to_feature_mapping = {"thinking": "thinking", "tools": "is_tools"}
 
             for model in models:
@@ -174,9 +174,9 @@ class Xinference(Base):
             "chat": LLMType.CHAT.value,
             "embedding": LLMType.EMBEDDING.value,
             "rerank": LLMType.RERANK.value,
-            "image": LLMType.VISION.value,
+            "image": LLMType.IMAGE2TEXT.value,
             "TTS": LLMType.TTS.value,
-            "asr": LLMType.ASR.value,
+            "speech2text": LLMType.SPEECH2TEXT.value,
         }
         return mapping.get(model_type_str, LLMType.CHAT.value)
 
@@ -236,7 +236,7 @@ class LocalAI(Base):
             res = []
             capability_to_model_type_mapping = {
                 "completion": LLMType.CHAT.value,
-                "vision": LLMType.VISION.value,
+                "vision": LLMType.IMAGE2TEXT.value,
                 "embedding": LLMType.EMBEDDING.value,
             }
             capability_to_feature_mapping = {
@@ -365,9 +365,9 @@ class OpenRouter(Base):
             if "embeddings" in output_modalities:
                 model_types.append(LLMType.EMBEDDING.value)
             if "image" in input_modalities and "text" in output_modalities:
-                model_types.append(LLMType.VISION.value)
+                model_types.append(LLMType.IMAGE2TEXT.value)
             if "audio" in input_modalities and "text" in output_modalities:
-                model_types.append(LLMType.ASR.value)
+                model_types.append(LLMType.SPEECH2TEXT.value)
             if "audio" in output_modalities:
                 model_types.append(LLMType.TTS.value)
 
@@ -396,7 +396,7 @@ class OpenAIAPICompatible(Base):
 
     _EMBEDDING_HINTS = ("embed", "embedding", "bge")
     _RERANK_HINTS = ("rerank", "reranker")
-    _ASR_HINTS = ("asr", "stt", "transcribe", "transcriber", "whisper")
+    _SPEECH2TEXT_HINTS = ("asr", "stt", "transcribe", "transcriber", "whisper")
     _TTS_HINTS = ("tts", "text-to-speech")
     _VISION_HINTS = (
         "vl",
@@ -421,14 +421,14 @@ class OpenAIAPICompatible(Base):
             return [LLMType.RERANK.value]
         if cls._contains_hint(model_name, cls._EMBEDDING_HINTS):
             return [LLMType.EMBEDDING.value]
-        if cls._contains_hint(model_name, cls._ASR_HINTS):
-            return [LLMType.ASR.value]
+        if cls._contains_hint(model_name, cls._SPEECH2TEXT_HINTS):
+            return [LLMType.SPEECH2TEXT.value]
         if cls._contains_hint(model_name, cls._TTS_HINTS):
             return [LLMType.TTS.value]
 
         model_types = [LLMType.CHAT.value]
         if cls._contains_hint(model_name, cls._VISION_HINTS):
-            model_types.append(LLMType.VISION.value)
+            model_types.append(LLMType.IMAGE2TEXT.value)
         return model_types
 
     def _format_model_list(self, raw_model_list):
@@ -458,29 +458,6 @@ class OpenAIAPICompatible(Base):
         return model_list
 
 
-class FunASR(Base):
-    _FACTORY_NAME = "FunASR"
-
-    def _format_model_list(self, raw_model_list):
-        models = raw_model_list.get("data") if isinstance(raw_model_list, dict) else None
-        if not isinstance(models, list):
-            return []
-
-        model_list = []
-        for model in models:
-            if not isinstance(model, dict) or not model.get("id"):
-                continue
-            model_list.append(
-                {
-                    "name": model["id"],
-                    "model_types": [LLMType.ASR.value],
-                    "features": [],
-                    "max_tokens": 8192,
-                }
-            )
-        return model_list
-
-
 class VLLM(OpenAIAPICompatible):
     _FACTORY_NAME = "VLLM"
 
@@ -500,7 +477,3 @@ class NewAPI(OpenAIAPICompatible):
         except (JSONDecodeError, TypeError):
             pass
         return self.api_key
-
-
-class RAGcon(OpenAIAPICompatible):
-    _FACTORY_NAME = "RAGcon"

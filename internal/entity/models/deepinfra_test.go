@@ -23,7 +23,6 @@ func newDeepInfraForTest(baseURL string) *DeepInfraModel {
 
 // TestDeepInfraRerankHappyPath verifies request shape and score mapping.
 func TestDeepInfraRerankHappyPath(t *testing.T) {
-	ctx := t.Context()
 	const modelPath = "/v1/inference/Qwen/Qwen3-Reranker-4B"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != modelPath {
@@ -60,13 +59,11 @@ func TestDeepInfraRerankHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	model := "Qwen/Qwen3-Reranker-4B"
 	resp, err := newDeepInfraForTest(srv.URL).Rerank(
-		ctx,
 		&model,
 		"capital of France?",
 		[]string{"Paris is the capital.", "Berlin is the capital."},
 		&APIConfig{ApiKey: &apiKey},
 		&RerankConfig{TopN: 1},
-		nil,
 	)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
@@ -79,7 +76,6 @@ func TestDeepInfraRerankHappyPath(t *testing.T) {
 
 // TestDeepInfraRerankNoTopNLimit returns every scored document when TopN is unset.
 func TestDeepInfraRerankNoTopNLimit(t *testing.T) {
-	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"scores": []float64{0.9, 0.1},
@@ -90,12 +86,10 @@ func TestDeepInfraRerankNoTopNLimit(t *testing.T) {
 	apiKey := "test-key"
 	model := "Qwen/Qwen3-Reranker-4B"
 	resp, err := newDeepInfraForTest(srv.URL).Rerank(
-		ctx,
 		&model,
 		"capital of France?",
 		[]string{"Paris is the capital.", "Berlin is the capital."},
 		&APIConfig{ApiKey: &apiKey},
-		nil,
 		nil,
 	)
 	if err != nil {
@@ -110,10 +104,9 @@ func TestDeepInfraRerankNoTopNLimit(t *testing.T) {
 
 // TestDeepInfraRerankEmptyDocuments returns an empty result without calling the API.
 func TestDeepInfraRerankEmptyDocuments(t *testing.T) {
-	ctx := t.Context()
 	apiKey := "test-key"
 	model := "Qwen/Qwen3-Reranker-4B"
-	resp, err := newDeepInfraForTest("http://unused").Rerank(ctx, &model, "q", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	resp, err := newDeepInfraForTest("http://unused").Rerank(&model, "q", nil, &APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
@@ -124,9 +117,8 @@ func TestDeepInfraRerankEmptyDocuments(t *testing.T) {
 
 // TestDeepInfraRerankRequiresAPIKey rejects requests without an API key.
 func TestDeepInfraRerankRequiresAPIKey(t *testing.T) {
-	ctx := t.Context()
 	model := "Qwen/Qwen3-Reranker-4B"
-	_, err := newDeepInfraForTest("http://unused").Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := newDeepInfraForTest("http://unused").Rerank(&model, "q", []string{"a"}, &APIConfig{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
@@ -134,7 +126,6 @@ func TestDeepInfraRerankRequiresAPIKey(t *testing.T) {
 
 // TestDeepInfraRerankRejectsScoreCountMismatch errors when scores length mismatches documents.
 func TestDeepInfraRerankRejectsScoreCountMismatch(t *testing.T) {
-	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"scores": []float64{0.5}})
 	}))
@@ -143,7 +134,7 @@ func TestDeepInfraRerankRejectsScoreCountMismatch(t *testing.T) {
 	apiKey := "test-key"
 	model := "cross-encoder/ms-marco-MiniLM-L-12-v2"
 	_, err := newDeepInfraForTest(srv.URL).Rerank(
-		ctx, &model, "q", []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+		&model, "q", []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "expected 2 scores") {
 		t.Errorf("expected score-count error, got %v", err)
 	}

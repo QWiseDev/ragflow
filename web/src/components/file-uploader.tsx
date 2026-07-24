@@ -159,14 +159,6 @@ interface FileUploaderProps extends Omit<
   hideDropzoneOnMaxFileCount?: boolean;
 
   /**
-   * Whether the folder tab should be shown in the uploader.
-   * @type boolean
-   * @default true
-   * @example showFolderTab={false}
-   */
-  showFolderTab?: boolean;
-
-  /**
    * Whether the uploader should accept multiple files.
    * @type boolean
    * @default false
@@ -200,7 +192,6 @@ export function FileUploader(props: FileUploaderProps) {
     multiple = false,
     disabled = false,
     hideDropzoneOnMaxFileCount = false,
-    showFolderTab = true,
     className,
     title,
     description,
@@ -396,32 +387,28 @@ export function FileUploader(props: FileUploaderProps) {
               <FileText className="size-4" />
               {t('fileManager.files', 'Files')}
             </TabsTrigger>
-            {showFolderTab && (
-              <TabsTrigger value="folder" className="gap-2">
-                <FolderUp className="size-4" />
-                {t('fileManager.folder', 'Folder')}
-              </TabsTrigger>
-            )}
+            <TabsTrigger value="folder" className="gap-2">
+              <FolderUp className="size-4" />
+              {t('fileManager.folder', 'Folder')}
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="file" className="mt-1">
             {renderDropzone(false)}
           </TabsContent>
-          {showFolderTab && (
-            <TabsContent value="folder" className="mt-1">
-              {renderDropzone(true)}
-              <input
-                ref={folderInputRef}
-                type="file"
-                className="hidden"
-                multiple
-                onChange={handleFolderSelect}
-                {...{
-                  webkitdirectory: '',
-                  directory: '',
-                }}
-              />
-            </TabsContent>
-          )}
+          <TabsContent value="folder" className="mt-1">
+            {renderDropzone(true)}
+            <input
+              ref={folderInputRef}
+              type="file"
+              className="hidden"
+              multiple
+              onChange={handleFolderSelect}
+              {...{
+                webkitdirectory: '',
+                directory: '',
+              }}
+            />
+          </TabsContent>
         </Tabs>
       )}
 

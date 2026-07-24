@@ -33,7 +33,8 @@ package component
 import (
 	"context"
 	"fmt"
-	"strings"
+	"maps"
+	"regexp"
 
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/runtime"
@@ -56,8 +57,6 @@ type MessageComponent struct {
 	autoPlay     audio.Engine
 	voice        string
 	lang         string
-	memoryIDs    []string
-	userID       string
 }
 
 // NewMessageComponent constructs a Message component. The params map
@@ -84,8 +83,6 @@ func NewMessageComponent(params map[string]any) (Component, error) {
 		format = OutputFormat(v)
 	}
 	engine, voice, lang := extractAudioConfig(params)
-	memIDs := extractMemoryIDsFromAny(params["memory_ids"])
-	userID, _ := params["user_id"].(string)
 	return &MessageComponent{
 		name:         componentNameMessage,
 		text:         tpl,
@@ -93,8 +90,6 @@ func NewMessageComponent(params map[string]any) (Component, error) {
 		autoPlay:     engine,
 		voice:        voice,
 		lang:         lang,
-		memoryIDs:    memIDs,
-		userID:       userID,
 	}, nil
 }
 
@@ -151,7 +146,9 @@ func (m *MessageComponent) Name() string { return m.name }
 
 // Invoke resolves inputs["text"] (or the per-instance text seeded
 // from params at build time) as a template against the current
-// *CanvasState and returns the resolved string at outputs["content"].
+// *CanvasState, returns the resolved string at outputs["content"], and
+// (if inputs["stream"] == true) records the number of chunks in
+// outputs["streamed_chunks"].
 //
 // Message Invoke behaviour:
 //   - input-format override: inputs["output_format"] wins over the
@@ -178,33 +175,24 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 		return nil, fmt.Errorf("Message: nil canvas state")
 	}
 
-	text := extractMessageText(inputs)
+	text, _ := inputs["text"].(string)
 	if text == "" {
 		text = m.text
 	}
-	if text == "" {
-		text = fallbackMessageText(inputs)
-	}
-
-	// Message renders values for display, so keep Python's tolerant behavior:
-	// missing references become empty strings and structured values use JSON.
-	// Parameter-binding components continue to use the strict resolver.
+	// Message is a display node, not parameter binding. Use the
+	// tolerant resolver (nil refs render as empty string) instead
+	// of runtime.ResolveTemplate — matches the Python canvas.py
+	// soft-fail semantic so authoring patterns like
+	// {Component@head} for optional fields don't crash the run when
+	// the upstream list is empty. Parameter-binding call sites keep
+	// the loud-fail contract via runtime.ResolveTemplate.
 	resolved := runtime.ResolveTemplateForDisplay(text, state)
 
 	// Extract downloads. Walks inputs for download-info maps so
 	// callers can attach binaries to the message body.
-	downloads := ExtractDownloads(resolved)
-	if downloads == nil {
-		downloads = make([]DownloadInfo, 0)
-	}
-	if len(downloads) > 0 && downloadInfoString(resolved) {
-		resolved = ""
-	}
-	for key, v := range inputs {
-		if key == "text" {
-			continue
-		}
-		downloads = appendUniqueDownloads(downloads, ExtractDownloads(v))
+	var downloads []DownloadInfo
+	for _, v := range inputs {
+		downloads = append(downloads, ExtractDownloads(v)...)
 	}
 
 	// Pick the effective output format. inputs["output_format"]
@@ -215,31 +203,15 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 		format = OutputFormat(v)
 	}
 
-	rendered := ""
-	if resolved != "" {
-		rendered = Render(RenderRequest{
-			Format: format,
-			Text:   resolved,
-		})
-	}
-	// Skip emission when an upstream Agent component already streamed its
-	// answer via the agent message emitter. Without this guard the user sees
-	// the same content twice: once from the Agent's StreamCallback during the
-	// ReAct loop, and again from the Message node's own emit call here.
-	// The rendered content is still stored in outputs["content"] for state
-	// persistence and the service-layer answer collector.
-	if rendered != "" && !runtime.AgentMessageEventsEmitted(ctx) {
-		if !runtime.EmitCanvasMessage(ctx, rendered) {
-			runtime.EmitAgentMessage(ctx, rendered, "")
-		}
-	}
+	rendered := Render(RenderRequest{
+		Format:    format,
+		Text:      resolved,
+		Downloads: downloads,
+	})
 
-	// Python's Message output schema always contains downloads, including an
-	// empty list. Keeping the key is also important for the full terminal
-	// output recorded in Canvas history between conversation turns.
-	out := map[string]any{
-		"content":   rendered,
-		"downloads": downloads,
+	out := map[string]any{"content": rendered}
+	if len(downloads) > 0 {
+		out["downloads"] = downloads
 	}
 
 	// auto_play TTS dispatch. The audio bytes are returned under
@@ -291,54 +263,46 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 	// memory service returns ErrMemoryServiceMissing which we
 	// surface under outputs["memory_error"] so the message still
 	// flows.
-	//
-	// The effective memory IDs come from inputs (runtime override)
-	// or fall back to the DSL-declared m.memoryIDs. This matches
-	// the Python Message component, which saves whenever
-	// memory_ids is non-empty.
-	memIDs := extractMemoryIDs(inputs)
-	if len(memIDs) == 0 {
-		memIDs = m.memoryIDs
-	}
-	if len(memIDs) > 0 {
-		userID := stringFromStateSys(state, "user_id")
-		if userID == "" {
-			userID = m.userID
+	memSave, _ := inputs["memory_save"].(bool)
+	if memSave {
+		memIDs := extractMemoryIDs(inputs)
+		if len(memIDs) == 0 {
+			// Fall back to per-instance memory_ids declared in
+			// the DSL — the orchestrator may not re-pass them
+			// when it overrides only `memory_save`.
+			memIDs = extractMemoryIDsFromParams(m.text)
 		}
-		// If userID is a canvas variable reference (e.g. "{cpn@user_id}"),
-		// resolve it against the current state. Mirrors Python's
-		// agent/component/message.py:569-571.
-		if userID != "" && runtime.VarRefPattern.MatchString(userID) {
-			userID = runtime.ResolveTemplateForDisplay(userID, state)
-		}
-		saver := GetMemorySaver()
-		saveErr := saver.Save(ctx, MemorySaveRequest{
-			MemoryIDs:     memIDs,
-			UserID:        userID,
-			AgentID:       state.TaskID,
-			SessionID:     state.RunID,
-			UserInput:     stringFromStateSys(state, "query"),
-			AgentResponse: rendered,
-		})
-		if saveErr != nil {
-			out["memory_error"] = saveErr.Error()
-			common.Error("Message: memory_save failed", saveErr)
+		if len(memIDs) > 0 {
+			saver := GetMemorySaver()
+			saveErr := saver.Save(ctx, MemorySaveRequest{
+				MemoryIDs:     memIDs,
+				AgentID:       state.TaskID,
+				SessionID:     state.RunID,
+				UserInput:     stringFromStateSys(state, "query"),
+				AgentResponse: rendered,
+			})
+			if saveErr != nil {
+				out["memory_error"] = saveErr.Error()
+				common.Error("Message: memory_save failed", saveErr)
+			}
 		}
 	}
 
+	if streamOn, _ := inputs["stream"].(bool); streamOn {
+		// P0: one chunk for the whole resolved content. A later phase
+		// can split on token / sentence boundaries.
+		out["streamed_chunks"] = 1
+	}
 	return out, nil
 }
 
 // extractMemoryIDs normalises a memory_ids value from inputs /
 // params. Accepts []string and []any[string].
 func extractMemoryIDs(inputs map[string]any) []string {
-	return extractMemoryIDsFromAny(inputs["memory_ids"])
-}
-
-// extractMemoryIDsFromAny normalises a memory_ids value from any
-// source (DSL params or runtime inputs). Accepts []string and
-// []any[string].
-func extractMemoryIDsFromAny(v any) []string {
+	v, ok := inputs["memory_ids"]
+	if !ok {
+		return nil
+	}
 	switch x := v.(type) {
 	case []string:
 		return x
@@ -354,44 +318,13 @@ func extractMemoryIDsFromAny(v any) []string {
 	return nil
 }
 
-func fallbackMessageText(inputs map[string]any) string {
-	if inputs == nil {
-		return ""
-	}
-	if text, _ := inputs["formalized_content"].(string); strings.TrimSpace(text) != "" {
-		return text
-	}
-
-	var only string
-	count := 0
-	for key, value := range inputs {
-		if isMessageInfraInput(key) {
-			continue
-		}
-		text, ok := value.(string)
-		if !ok || strings.TrimSpace(text) == "" {
-			continue
-		}
-		only = text
-		count++
-		if count > 1 {
-			return ""
-		}
-	}
-	if count == 1 {
-		return only
-	}
-	return ""
-}
-
-func isMessageInfraInput(key string) bool {
-	switch key {
-	case "state", "__cpn_id__", "__legacy_noop__", "_created_time", "_elapsed_time",
-		"output_format", "voice", "lang", "auto_play", "memory_save", "memory_ids", "user_id", "stream":
-		return true
-	default:
-		return false
-	}
+// extractMemoryIDsFromParams looks for a "_memory_ids" hint in
+// the component's stored text — used as a last-ditch fallback
+// when the orchestrator does not re-pass memory_ids. Returns nil
+// in the common case; this helper exists to keep the public
+// memory-save flow permissive about caller omissions.
+func extractMemoryIDsFromParams(_ string) []string {
+	return nil
 }
 
 // stringFromStateSys reads a sys-level state value. Returns ""
@@ -409,9 +342,17 @@ func stringFromStateSys(state *runtime.CanvasState, key string) string {
 	return ""
 }
 
-// Stream resolves the message and emits the content chunk. The outer
-// Agent SSE handler owns the final [DONE] frame, matching Python's
-// agent_api.py rather than leaking a component-local done marker.
+// Stream is the SSE variant. The resolved template content is
+// split on sentence boundaries ([.!?]\s+ between letters/digits)
+// and each sentence is emitted as a separate chunk. A trailing
+// "done" marker signals end-of-stream. The chunk map's "content"
+// key carries the sentence text; "done" is true on the final
+// chunk.
+//
+// The splitter uses a regex for portable sentence boundaries
+// without pulling in a tokenizer. A future tokenizer-aware
+// splitter (gonja + langdetect, or a small Go
+// sentence-segmentation lib) can improve break quality.
 func (m *MessageComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
 	ch := make(chan map[string]any, 16)
 	go func() {
@@ -425,12 +366,65 @@ func (m *MessageComponent) Stream(ctx context.Context, inputs map[string]any) (<
 			return
 		}
 		text, _ := result["content"].(string)
+		if text == "" {
+			// Nothing to split; emit a single empty-content chunk
+			// plus the done marker so downstream consumers have a
+			// well-defined two-chunk stream.
+			select {
+			case ch <- map[string]any{"content": "", "thinking": ""}:
+			case <-ctx.Done():
+				return
+			}
+		} else {
+			sentences := splitSentences(text)
+			for _, s := range sentences {
+				select {
+				case ch <- map[string]any{"content": s, "thinking": ""}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
 		select {
-		case ch <- map[string]any{"content": text, "thinking": ""}:
+		case ch <- map[string]any{"done": true, "model": result["model"]}:
 		case <-ctx.Done():
 		}
 	}()
 	return ch, nil
+}
+
+// sentenceSplitRe matches sentence boundaries: ".", "!", or "?"
+// followed by whitespace. The character class keeps the
+// abbreviations list short for v1; the follow-up tokenizer-aware
+// splitter is a more robust replacement.
+var sentenceSplitRe = regexp.MustCompile(`([.!?])\s+`)
+
+// splitSentences splits text on sentence boundaries, preserving
+// the trailing punctuation. Returns a slice of at least one
+// element; empty input returns a single empty element.
+func splitSentences(text string) []string {
+	if text == "" {
+		return []string{""}
+	}
+	matches := sentenceSplitRe.FindAllStringIndex(text, -1)
+	if len(matches) == 0 {
+		return []string{text}
+	}
+	out := make([]string, 0, len(matches)+1)
+	prev := 0
+	for _, m := range matches {
+		// Include the matched punctuation in the previous sentence
+		// but stop BEFORE the trailing whitespace — otherwise each
+		// emitted sentence has a leading space, which both the
+		// Message component's stream joiner and the v1 Python
+		// chunker would have to re-trim.
+		out = append(out, text[prev:m[0]+1])
+		prev = m[1]
+	}
+	if prev < len(text) {
+		out = append(out, text[prev:])
+	}
+	return out
 }
 
 // Inputs returns the public parameter surface. Field types match
@@ -449,15 +443,25 @@ func (m *MessageComponent) Inputs() map[string]string {
 	}
 }
 
-// Outputs returns the resolved template plus optional side-channel outputs.
+// Outputs returns the resolved template plus the streamed-chunk
+// counter.
 func (m *MessageComponent) Outputs() map[string]string {
 	return map[string]string{
-		"content":      "Resolved and rendered message body.",
-		"downloads":    "Extracted download descriptors ({doc_id, filename, mime_type, url}).",
-		"audio":        "{media_type, data_b64} envelope populated when auto_play is wired and a TTS engine succeeds.",
-		"audio_error":  "Surfaced when TTS dispatch fails; the textual content is still returned.",
-		"memory_error": "Surfaced when memory persistence fails; the textual content is still returned.",
+		"content":         "Resolved and rendered message body.",
+		"streamed_chunks": "Number of SSE chunks emitted (present when stream=true).",
+		"downloads":       "Extracted download descriptors ({doc_id, filename, mime_type, url}).",
+		"audio":           "{media_type, data_b64} envelope populated when auto_play is wired and a TTS engine succeeds.",
+		"audio_error":     "Surfaced when TTS dispatch fails; the textual content is still returned.",
+		"memory_error":    "Surfaced when memory persistence fails; the textual content is still returned.",
 	}
+}
+
+// mapCopy shallow-copies src into a fresh map. Used to keep Message's
+// passthrough outputs un-aliased from the caller's inputs map.
+func mapCopy(src map[string]any) map[string]any {
+	out := make(map[string]any, len(src))
+	maps.Copy(out, src)
+	return out
 }
 
 func init() {

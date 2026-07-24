@@ -3,52 +3,50 @@ import { TFunction } from 'i18next';
 
 export const confluenceConstant = (t: TFunction) => [
   {
-    label: t('setting.dataSourceFieldConfluenceUsername'),
+    label: 'Confluence Username',
     name: 'config.credentials.confluence_username',
     type: FormFieldType.Text,
     required: true,
   },
   {
-    label: t('setting.dataSourceFieldConfluenceAccessToken'),
+    label: 'Confluence Access Token',
     name: 'config.credentials.confluence_access_token',
     type: FormFieldType.Password,
     required: true,
   },
   {
-    label: t('setting.dataSourceFieldWikiBaseUrl'),
+    label: 'Wiki Base URL',
     name: 'config.wiki_base',
     type: FormFieldType.Text,
     required: false,
     tooltip: t('setting.confluenceWikiBaseUrlTip'),
   },
   {
-    label: t('setting.dataSourceFieldIsCloud'),
+    label: 'Is Cloud',
     name: 'config.is_cloud',
     type: FormFieldType.Checkbox,
     required: false,
     tooltip: t('setting.confluenceIsCloudTip'),
   },
   {
-    label: t('setting.dataSourceFieldIndexMode'),
+    label: 'Index Mode',
     name: 'config.index_mode',
     type: FormFieldType.Segmented,
     options: [
-      { label: t('setting.dataSourceOptionEverything'), value: 'everything' },
-      { label: t('setting.dataSourceOptionSpace'), value: 'space' },
-      { label: t('setting.dataSourceOptionPage'), value: 'page' },
+      { label: 'Everything', value: 'everything' },
+      { label: 'Space', value: 'space' },
+      { label: 'Page', value: 'page' },
     ],
   },
   {
     name: 'config.page_id',
-    label: t('setting.dataSourceFieldPageId'),
+    label: 'Page ID',
     type: FormFieldType.Text,
     customValidate: (val: string, formValues: any) => {
       const index_mode = formValues?.config?.index_mode;
       console.log('index_mode', index_mode, val);
       if (!val && index_mode === 'page') {
-        return t('setting.dataSourceValidationFieldRequired', {
-          label: t('setting.dataSourceFieldPageId'),
-        });
+        return 'Page ID is required';
       }
       return true;
     },
@@ -59,14 +57,12 @@ export const confluenceConstant = (t: TFunction) => [
   },
   {
     name: 'config.space',
-    label: t('setting.dataSourceFieldSpaceKey'),
+    label: 'Space Key',
     type: FormFieldType.Text,
     customValidate: (val: string, formValues: any) => {
       const index_mode = formValues?.config?.index_mode;
       if (!val && index_mode === 'space') {
-        return t('setting.dataSourceValidationFieldRequired', {
-          label: t('setting.dataSourceFieldSpaceKey'),
-        });
+        return 'Space Key is required';
       }
       return true;
     },
@@ -77,7 +73,7 @@ export const confluenceConstant = (t: TFunction) => [
   },
   {
     name: 'config.index_recursively',
-    label: t('setting.dataSourceFieldIndexRecursively'),
+    label: 'Index Recursively',
     type: FormFieldType.Checkbox,
     shouldRender: (formValues: any) => {
       const index_mode = formValues?.config?.index_mode;
@@ -94,26 +90,28 @@ export const confluenceConstant = (t: TFunction) => [
     },
     render: () => (
       <div className="text-sm text-text-secondary bg-bg-card border border-border-button rounded-md px-3 py-2">
-        {t('setting.dataSourceConfluenceEverythingTip')}
+        {
+          'This choice will index all pages the provided credentials have access to.'
+        }
       </div>
     ),
   },
   {
-    label: t('setting.dataSourceFieldSpaceKey'),
+    label: 'Space Key',
     name: 'config.space',
     type: FormFieldType.Text,
     required: false,
     hidden: true,
   },
   {
-    label: t('setting.dataSourceFieldPageId'),
+    label: 'Page ID',
     name: 'config.page_id',
     type: FormFieldType.Text,
     required: false,
     hidden: true,
   },
   {
-    label: t('setting.dataSourceFieldIndexRecursively'),
+    label: 'Index Recursively',
     name: 'config.index_recursively',
     type: FormFieldType.Checkbox,
     required: false,

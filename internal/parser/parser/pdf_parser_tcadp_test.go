@@ -36,8 +36,7 @@ func TestPDFParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 		"tcadp_apiserver": server.URL,
 		"tcadp_api_key":   "tcadp-secret",
 	})
-	ctx := t.Context()
-	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
+	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -66,8 +65,7 @@ func TestPDFParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
 		"output_format":   "markdown",
 		"tcadp_apiserver": server.URL,
 	})
-	ctx := t.Context()
-	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
+	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -79,8 +77,7 @@ func TestPDFParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
 func TestPDFParser_ParseWithResult_TCADPRequiresAPIServer(t *testing.T) {
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{"parse_method": "TCADP parser"})
-	ctx := t.Context()
-	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
+	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err == nil || !strings.Contains(res.Err.Error(), "tcadp_apiserver") {
 		t.Fatalf("error = %v, want tcadp_apiserver context", res.Err)
 	}

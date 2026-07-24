@@ -17,7 +17,6 @@
 package service
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"strings"
@@ -245,7 +244,7 @@ type fakeEmbedder struct {
 	err  error
 }
 
-func (f *fakeEmbedder) Encode(ctx context.Context, texts []string) ([][]float64, error) {
+func (f *fakeEmbedder) Encode(texts []string) ([][]float64, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -253,11 +252,10 @@ func (f *fakeEmbedder) Encode(ctx context.Context, texts []string) ([][]float64,
 }
 
 func TestInsertCitations_Happy(t *testing.T) {
-	ctx := t.Context()
 	chunks := []SourcedChunk{{ID: "abc123"}, {ID: "def456"}}
 	chunkVectors := [][]float64{{1, 0, 0}, {0, 1, 0}}
 	embedder := &fakeEmbedder{vecs: [][]float64{{1, 0, 0}, {0, 1, 0}}}
-	answer, cited := InsertCitations(ctx, "First sentence. Second sentence here.", chunks, embedder, chunkVectors)
+	answer, cited := InsertCitations("First sentence. Second sentence here.", chunks, embedder, chunkVectors)
 	if len(cited) == 0 {
 		t.Fatalf("expected citations, got none. answer=%q", answer)
 	}
@@ -267,32 +265,28 @@ func TestInsertCitations_Happy(t *testing.T) {
 }
 
 func TestInsertCitations_EmptyAnswer(t *testing.T) {
-	ctx := t.Context()
-	c, _ := InsertCitations(ctx, "", nil, &fakeEmbedder{}, nil)
+	c, _ := InsertCitations("", nil, &fakeEmbedder{}, nil)
 	if c != "" {
 		t.Errorf("empty answer: %q", c)
 	}
 }
 
 func TestInsertCitations_NoChunks(t *testing.T) {
-	ctx := t.Context()
-	c, _ := InsertCitations(ctx, "Hello world.", nil, &fakeEmbedder{}, [][]float64{})
+	c, _ := InsertCitations("Hello world.", nil, &fakeEmbedder{}, [][]float64{})
 	if c != "Hello world." {
 		t.Errorf("no chunks should return original: %q", c)
 	}
 }
 
 func TestInsertCitations_EncodeError(t *testing.T) {
-	ctx := t.Context()
-	c, _ := InsertCitations(ctx, "Hello world.", []SourcedChunk{{ID: "c1"}}, &fakeEmbedder{err: fmt.Errorf("offline")}, [][]float64{{1, 0}})
+	c, _ := InsertCitations("Hello world.", []SourcedChunk{{ID: "c1"}}, &fakeEmbedder{err: fmt.Errorf("offline")}, [][]float64{{1, 0}})
 	if c != "Hello world." {
 		t.Errorf("encode error should return original: %q", c)
 	}
 }
 
 func TestInsertCitations_EncodeEmpty(t *testing.T) {
-	ctx := t.Context()
-	c, _ := InsertCitations(ctx, "Hello world.", []SourcedChunk{{ID: "c1"}}, &fakeEmbedder{vecs: [][]float64{}}, [][]float64{{1, 0}})
+	c, _ := InsertCitations("Hello world.", []SourcedChunk{{ID: "c1"}}, &fakeEmbedder{vecs: [][]float64{}}, [][]float64{{1, 0}})
 	if c != "Hello world." {
 		t.Errorf("empty encode result should return original: %q", c)
 	}

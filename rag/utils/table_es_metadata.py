@@ -244,14 +244,9 @@ def aggregate_table_doc_metadata(chunks: list, task: dict) -> dict:
             for col in meta_cols:
                 tk, _src = es_col_keys.get(col, (None, "none"))
                 if not tk:
-                    tk, src = _resolve_es_chunk_field_key(col, fm, ck)
-                    if tk:
-                        es_col_keys[col] = (tk, src)
-                        logging.debug(f"[TABLE_META_DEBUG] column '{col}' -> ES key {tk!r} (source={src}, chunk={i})")
-                    else:
-                        if i == 0:
-                            logging.debug(f"[TABLE_META_DEBUG] no resolved ES key for column '{col}'")
-                        continue
+                    if i == 0:
+                        logging.debug(f"[TABLE_META_DEBUG] no resolved ES key for column '{col}'")
+                    continue
                 raw_k = _es_raw_field_key_from_typed(tk)
                 val = None
                 from_tks = False

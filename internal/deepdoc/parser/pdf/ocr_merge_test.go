@@ -6,9 +6,7 @@ import (
 	"context"
 	"image/png"
 	"os"
-	"ragflow/internal/common"
 	inf "ragflow/internal/deepdoc/parser/pdf/inference"
-	pdftype "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
 	"strings"
 	"testing"
@@ -19,7 +17,7 @@ import (
 // instead of real text. This validates that detect+merge+recognize
 // produces readable English from the scan.
 func TestOCR_mergeChars_RealScanned(t *testing.T) {
-	url := common.GetEnv(common.EnvDeepDocURL)
+	url := os.Getenv("DEEPDOC_URL")
 	if url == "" {
 		t.Skip("DEEPDOC_URL not set")
 	}
@@ -63,9 +61,7 @@ func TestOCR_mergeChars_RealScanned(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p := NewParser(pdftype.ParserConfig{})
-
-	boxes := p.ocrMergeChars(context.Background(), img, chars, dd, 0)
+	boxes := ocrMergeChars(context.Background(), img, chars, dd, 0)
 	t.Logf("ocrMergeChars boxes: %d", len(boxes))
 	for i, b := range boxes {
 		// Save go render for comparison
@@ -78,7 +74,7 @@ func TestOCR_mergeChars_RealScanned(t *testing.T) {
 			i, b.X0, b.Top, b.X1, b.Bottom, b.Text[:end])
 	}
 
-	scanBoxes := p.ocrDetectAndRecognize(context.Background(), img, dd, 0, "scan page")
+	scanBoxes := ocrDetectAndRecognize(context.Background(), img, dd, 0, "scan page")
 	t.Logf("ocrScanPage boxes (no chars): %d", len(scanBoxes))
 	for i, b := range scanBoxes {
 		end := min(120, len(b.Text))

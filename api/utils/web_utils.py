@@ -162,8 +162,7 @@ async def send_email_html(to_email: str, subject: str, template_key: str, **cont
     smtp = aiosmtplib.SMTP(
         hostname=settings.MAIL_SERVER,
         port=settings.MAIL_PORT,
-        use_tls=settings.MAIL_USE_SSL,
-        start_tls=settings.MAIL_USE_TLS,
+        use_tls=True,
         timeout=10,
     )
 

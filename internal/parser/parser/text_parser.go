@@ -34,9 +34,10 @@ package parser
 
 import (
 	"bytes"
-	"context"
 	"strings"
 )
+
+const TextParserLibType = "text"
 
 // TextParser is the text&code family parser. It implements the
 // structured ParseResultProducer contract directly.
@@ -48,10 +49,12 @@ type TextParser struct {
 	maxItemBytes int
 }
 
-// NewTextParser constructs a TextParser with the default
-// paragraph-sized chunking ceiling.
-func NewTextParser() *TextParser {
-	return &TextParser{maxItemBytes: 8192}
+// NewTextParser constructs a TextParser. The libType argument
+// preserves the parser-library constructor signature for
+// consistency with the other family parsers; the value is ignored
+// (TextParser has no alternative backend).
+func NewTextParser(_ string) (*TextParser, error) {
+	return &TextParser{maxItemBytes: 8192}, nil
 }
 
 // ParseWithResult emits one item per non-empty paragraph. The
@@ -61,7 +64,7 @@ func NewTextParser() *TextParser {
 // The items slice is always non-nil so downstream chunkers see a
 // non-empty JSON payload even for an empty input (mirrors the
 // MarkdownParser convention at markdown_parser.go:71-76).
-func (p *TextParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+func (p *TextParser) ParseWithResult(filename string, data []byte) ParseResult {
 	if !utf8Valid(data) {
 		return ParseResult{Err: errInvalidUTF8}
 	}
