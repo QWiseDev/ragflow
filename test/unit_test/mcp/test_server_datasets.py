@@ -40,7 +40,7 @@ class _FakeResponse:
 
 
 def _datasets(count):
-    return [{"id": f"dataset-{idx}", "description": f"description-{idx}"} for idx in range(count)]
+    return [{"id": f"dataset-{idx}", "name": f"name-{idx}", "description": f"description-{idx}"} for idx in range(count)]
 
 
 @pytest.fixture()
@@ -72,6 +72,7 @@ async def test_list_datasets_default_fetches_all_with_rest_page_size_limit(monke
 
     rows = [json.loads(line) for line in result.splitlines()]
     assert [row["id"] for row in rows] == [f"dataset-{idx}" for idx in range(250)]
+    assert [row["name"] for row in rows] == [f"name-{idx}" for idx in range(250)]
     assert [request["params"]["page"] for request in requests] == [1, 2, 3]
     assert all(request["path"] == "/datasets" for request in requests)
     assert all(request["params"]["page_size"] == 100 for request in requests)
